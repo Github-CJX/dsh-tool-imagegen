@@ -2,6 +2,11 @@
   "name": "@local/dsh-tool-imagegen",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Github-CJX/dsh-tool-imagegen.git"
+  },
   "type": "module",
   "description": "DSH 对话内联生图插件：OpenAI 兼容接口，图片以 generated-image 块直接显示在对话框内，设置项在 设置→插件→可配置。",
   "main": "./lib/index.js",
