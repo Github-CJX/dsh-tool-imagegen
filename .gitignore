@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# build artifacts
+lib/client.js
+dist/
+
+# logs & OS junk
+*.log
+.DS_Store
+Thumbs.db
+
+# local settings — never commit real credentials
+settings.yaml
+*.local.yaml

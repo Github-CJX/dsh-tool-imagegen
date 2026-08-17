@@ -1,0 +1,181 @@
+/**
+ * dsh-tool-imagegen inline conversation view. Mirrors the platform tool-row
+ * chrome so generated images read as a sibling of the bash/read/search rows,
+ * riding the dsh --dsw-* tokens.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.title {
+  color: var(--dsw-alias-label-secondary);
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.meta {
+  color: var(--dsw-alias-label-tertiary);
+  flex: auto;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 24px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.state {
+  color: var(--dsw-alias-state-error-primary);
+  flex: none;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.frame {
+  position: relative;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+
+.img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  margin: 0 auto;
+}
+
+.download {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-3) 86%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.frame:hover .download,
+.frame:focus-within .download {
+  opacity: 1;
+}
+
+.download:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.captionLine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.captionPrompt {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* --- running / loading / error states ---------------------------------------- */
+
+.running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 14px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-label-tertiary);
+  border-radius: 50%;
+  animation: dsh-tool-imagegen-spin 0.8s linear infinite;
+}
+
+@keyframes dsh-tool-imagegen-spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.loadFailed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 0 14px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

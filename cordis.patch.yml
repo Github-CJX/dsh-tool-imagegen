@@ -1,0 +1,5 @@
+# Patch layer for @local/dsh-tool-imagegen — registers the plugin into the
+# profile bundle list. The profile loader merges this with the bundle layers.
+- insert:
+    - id: dsh-tool-imagegen
+      name: '@local/dsh-tool-imagegen'

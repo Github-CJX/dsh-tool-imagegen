@@ -1,0 +1,36 @@
+{
+  "name": "@local/dsh-tool-imagegen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 对话内联生图插件：OpenAI 兼容接口，图片以 generated-image 块直接显示在对话框内，设置项在 设置→插件→可配置。",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "schemastery": "^3.18.0"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.1",
+    "react": "^18.3.1",
+    "rolldown": "^1.2.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  }
+}
