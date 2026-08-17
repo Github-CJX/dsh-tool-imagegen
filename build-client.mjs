@@ -16,7 +16,7 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'rolldown'
 
@@ -63,6 +63,11 @@ function scopeCss(css, scoped) {
  * The `\0` prefix marks the id virtual (rolldown skips file-based handling);
  * the `.js` suffix keeps the id out of the (now-removed) CSS pipeline, which
  * keys the module type on the id extension and hard-errors on `.css`.
+ *
+ * The virtual id is the css path RELATIVE to the plugin root, so the emitted
+ * bundle is byte-identical on any machine — the CI gate diffs a fresh build
+ * against the committed lib/client.js, and absolute paths (Windows `C:\...`
+ * vs Linux `/home/runner/...`) would break that.
  */
 const VIRTUAL_PREFIX = '\0cssm:'
 const JS_SUFFIX = '.js'
@@ -74,18 +79,19 @@ function cssModulePlugin() {
     resolveId(source, importer) {
       if (!source.endsWith('.module.css')) return null
       const base = importer === undefined ? ROOT : dirname(importer)
-      return VIRTUAL_PREFIX + resolve(base, source) + JS_SUFFIX
+      return VIRTUAL_PREFIX + relative(ROOT, resolve(base, source)) + JS_SUFFIX
     },
     load(id) {
       if (!id.startsWith(VIRTUAL_PREFIX)) return null
-      const realPath = id.slice(VIRTUAL_PREFIX.length, -JS_SUFFIX.length)
+      const relPath = id.slice(VIRTUAL_PREFIX.length, -JS_SUFFIX.length)
+      const realPath = resolve(ROOT, relPath)
       const raw = readFileSync(realPath, 'utf8')
       const classes = classTokens(raw)
-      const hash = shortHash(realPath)
+      const hash = shortHash(relPath)
       const scoped = new Map(classes.map((name) => [name, `dsh-tig_${name}_${hash}`]))
       const scopedCss = scopeCss(raw, scoped)
       const classMap = Object.fromEntries(scoped)
-      const tagId = `${PLUGIN_ID}/${realPath.slice(ROOT.length + 1).replace(/\\/g, '/')}`
+      const tagId = `${PLUGIN_ID}/${relPath.replace(/\\/g, '/')}`
       const code = [
         `const css = ${JSON.stringify(scopedCss)};`,
         `const tagId = ${JSON.stringify(tagId)};`,
