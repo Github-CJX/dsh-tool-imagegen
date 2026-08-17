@@ -5,6 +5,7 @@
 对接任意 OpenAI 兼容的 `/images/generations` 接口（默认 `gpt-image-2`），当前模型是纯文本输入也能正常使用。
 
 ![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green)
+![Uploading image.png…]()
 
 ## 特性
 
