@@ -128,8 +128,16 @@ if (chunk === undefined || chunk.code === undefined || buildResult.output.length
 }
 
 // rolldown's `//#region` comments carry the virtual id verbatim; drop the NUL
-// byte so no control character survives into the shipped bundle.
-const bundleCode = chunk.code.replaceAll('\0cssm:', 'cssm:')
+// byte so no control character survives into the shipped bundle. Then normalize
+// path separators inside css-module virtual ids (Windows `\` -> `/`) so the
+// bundle is byte-identical across platforms — the CI gate diffs a fresh build
+// against the committed lib/client.js. Those lines carry nothing but the id
+// (import statements / region comments), so the replacement is safe.
+const bundleCode = chunk.code
+  .replaceAll('\0cssm:', 'cssm:')
+  .split('\n')
+  .map((line) => (line.includes('cssm:') ? line.replaceAll('\\', '/') : line))
+  .join('\n')
 
 const wrapped = `window.__ModuleLoader__.load({
 	id: ${JSON.stringify(PLUGIN_ID)},
