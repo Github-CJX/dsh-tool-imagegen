@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build client bundle
+        run: node build-client.mjs
+
+      - name: Smoke-test client bundle
+        run: node smoke-client.mjs
+
+      # lib/client.js is committed so `dsh plugin add` works from a fresh
+      # clone without a build step — fail the run if a push forgot to rebuild.
+      - name: Ensure committed bundle is up to date
+        run: git diff --exit-code -- lib/client.js
