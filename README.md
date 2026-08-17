@@ -4,7 +4,7 @@
 
 对接任意 OpenAI 兼容的 `/images/generations` 接口（默认 `gpt-image-2`），当前模型是纯文本输入也能正常使用。
 
-![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green)
+![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 <img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/e5b19ba2-04b7-4b07-90e0-418475920856" />
 
@@ -125,3 +125,7 @@ node build-client.mjs && node smoke-client.mjs
 - 插件工作目录：`C:\Users\CJX\.dsh\plugins\dsh-tool-imagegen`
 - 平台包路径：DSH Desktop `resources/app.asar.unpacked/node_modules/@deepseek-ai/`
 - 不依赖旧插件 `@dickpy/dsh-imagegen`（已彻底移除）
+
+## License
+
+[MIT](LICENSE) © 2026 CJX
