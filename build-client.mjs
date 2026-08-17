@@ -87,7 +87,10 @@ function cssModulePlugin() {
       const realPath = resolve(ROOT, relPath)
       const raw = readFileSync(realPath, 'utf8')
       const classes = classTokens(raw)
-      const hash = shortHash(relPath)
+      // Normalize separators BEFORE hashing — node:path.relative yields
+      // backslashes on Windows, which would give the same file different
+      // scoped class names than a Linux build.
+      const hash = shortHash(relPath.replace(/\\/g, '/'))
       const scoped = new Map(classes.map((name) => [name, `dsh-tig_${name}_${hash}`]))
       const scopedCss = scopeCss(raw, scoped)
       const classMap = Object.fromEntries(scoped)
