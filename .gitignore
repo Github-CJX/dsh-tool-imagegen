@@ -2,7 +2,7 @@
 node_modules/
 
 # build artifacts
-lib/client.js
+# lib/client.js is committed so a fresh clone works without a build step
 dist/
 
 # logs & OS junk
