@@ -1,12 +1,14 @@
 # dsh-tool-imagegen
 
-**DSH Desktop 对话内联生图插件** — 模型在对话中自动调用 `generate_image` 工具，图片直接内联显示在对话框里，无需外部面板、无需手动切换。
+**DeepSeek Harness Desktop 对话内联生图插件** — 模型在对话中自动调用 `generate_image` 工具，图片直接内联显示在对话框里，无需外部面板、无需手动切换。
 
 对接任意 OpenAI 兼容的 `/images/generations` 接口（默认 `gpt-image-2`），当前模型是纯文本输入也能正常使用。
 
 ![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green)
 
 <img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/e5b19ba2-04b7-4b07-90e0-418475920856" />
+
+<img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/0db997cc-378a-43c7-8a75-5956fdb1971f" />
 
 
 ## 特性
