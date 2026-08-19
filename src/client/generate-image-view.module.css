@@ -78,10 +78,24 @@
   margin: 0 auto;
 }
 
-.download {
+/* Action cluster (view / download / open) over the image corner, revealed on
+   hover or focus like the platform's own image overlays. */
+.actions {
   position: absolute;
   right: 10px;
   bottom: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.frame:hover .actions,
+.frame:focus-within .actions {
+  opacity: 1;
+}
+
+.action {
   padding: 4px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
@@ -90,18 +104,55 @@
   font-size: 12px;
   line-height: 18px;
   text-decoration: none;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  cursor: pointer;
+  font-family: inherit;
 }
 
-.frame:hover .download,
-.frame:focus-within .download {
-  opacity: 1;
-}
-
-.download:hover {
+.action:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-border-l1);
+}
+
+.action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Fullscreen image viewer overlay. */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 72%);
+}
+
+.viewerImg {
+  max-width: 92vw;
+  max-height: 92vh;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgb(0 0 0 / 55%);
+}
+
+.viewerClose {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 45%);
+  color: var(--dsw-alias-label-primary, #fff);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.viewerClose:hover {
+  background: rgb(0 0 0 / 65%);
 }
 
 .caption {
@@ -123,6 +174,14 @@
 
 .captionPrompt {
   color: var(--dsw-alias-label-secondary);
+}
+
+.actionError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.editReady {
+  color: var(--dsw-alias-state-success-primary);
 }
 
 /* --- running / loading / error states ---------------------------------------- */

@@ -16,6 +16,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { GeneratedImageBlock } from './protocol.ts'
+import type { ImageGenLocaleKey } from './locales.ts'
 import css from './generate-image-view.module.css'
 
 /** The registrant-side face the toolview entry injects (per session occurrence). */
@@ -26,6 +27,22 @@ export interface GenerateImageViewFace {
    * only authorizes `image` blocks, which this plugin never writes).
    */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /**
+   * Ask the host to open one image in the system's default image viewer: the
+   * host re-checks the session reference, copies the bytes to a temp file,
+   * and hands them to the OS opener (start / open / xdg-open). The browser
+   * never receives the bytes or a path.
+   */
+  openLocally: (attachment: ImageAttachmentRef) => Promise<void>
+  /**
+   * Stage one image as the session's pending edit reference — the same
+   * per-session draft store the composer upload button writes. The user then
+   * types a modification request and sends; the sendSession wrapper submits
+   * image + text through the upload bridge, and the model edits the picture
+   * via generate_image (the envelope carries the work-dir path). Works for
+   * text-only and image-capable models alike.
+   */
+  stageEdit: (attachment: ImageAttachmentRef) => Promise<void>
 }
 
 /** Props the composed toolview receives. */
@@ -68,6 +85,8 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   const settled = 'content' in block
   const images = settled ? generatedImageBlocks(block.content) : []
   const isError = settled && 'isError' in block && block.isError === true
+  // The fullscreen overlay holds one image at a time (url + display name).
+  const [viewing, setViewing] = useState<{ url: string; name: string } | undefined>(undefined)
 
   const runningPrompt = settled ? undefined : promptFromArgs(block.argsRaw)
   const captionMeta = (image: GeneratedImageBlock): string => {
@@ -130,11 +149,40 @@ export function GenerateImageView(props: GenerateImageViewProps) {
             key={image.attachment.attachmentId ?? `generated-${index}`}
             image={image}
             loadImage={props.loadImage}
+            openLocally={props.openLocally}
+            stageEdit={props.stageEdit}
+            onView={(url, name) => setViewing({ url, name })}
             t={props.t}
             index={index}
           />
         ))}
       </div>
+      {viewing !== undefined
+        ? <FullscreenViewer url={viewing.url} name={viewing.name} onClose={() => setViewing(undefined)} />
+        : null}
+    </div>
+  )
+}
+
+/** Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes. */
+function FullscreenViewer(props: { url: string; name: string; onClose: () => void }) {
+  const { url, name, onClose } = props
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className={css.viewer} role="dialog" aria-label={name} onClick={onClose}>
+      <button type="button" className={css.viewerClose} aria-label="close" onClick={onClose}>✕</button>
+      <img
+        className={css.viewerImg}
+        src={url}
+        alt={name}
+        onClick={(event) => event.stopPropagation()}
+      />
     </div>
   )
 }
@@ -158,12 +206,21 @@ function fileNameOf(image: GeneratedImageBlock, index: number): string {
 function ImageRow(props: {
   image: GeneratedImageBlock
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
-  t: (key: 'toolviewDownload') => string
+  openLocally: (attachment: ImageAttachmentRef) => Promise<void>
+  stageEdit: (attachment: ImageAttachmentRef) => Promise<void>
+  onView: (url: string, name: string) => void
+  t: (key: ImageGenLocaleKey) => string
   index: number
 }) {
-  const { image, loadImage, t, index } = props
+  const { image, loadImage, openLocally, stageEdit, onView, t, index } = props
   const [url, setUrl] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<string | undefined>(undefined)
+  // Local-open handshake: idle → opening → idle (success) or failed (error).
+  const [openState, setOpenState] = useState<'idle' | 'opening' | 'failed'>('idle')
+  const [openError, setOpenError] = useState<string | undefined>(undefined)
+  // Edit staging: idle → staging → staged (composer chip appears) or failed.
+  const [editState, setEditState] = useState<'idle' | 'staging' | 'staged' | 'failed'>('idle')
+  const [editError, setEditError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let alive = true
@@ -176,12 +233,38 @@ function ImageRow(props: {
     return () => { alive = false }
   }, [loadImage, image.attachment])
 
+  const handleOpen = () => {
+    if (openState === 'opening') return
+    setOpenState('opening')
+    setOpenError(undefined)
+    openLocally(image.attachment)
+      .then(() => setOpenState('idle'))
+      .catch((error: unknown) => {
+        setOpenState('failed')
+        setOpenError(error instanceof Error ? error.message : String(error))
+      })
+  }
+
+  const handleEdit = () => {
+    if (editState === 'staging') return
+    setEditState('staging')
+    setEditError(undefined)
+    stageEdit(image.attachment)
+      .then(() => setEditState('staged'))
+      .catch((error: unknown) => {
+        setEditState('failed')
+        setEditError(error instanceof Error ? error.message : String(error))
+      })
+  }
+
   const meta = (() => {
     const parts: string[] = []
     if (typeof image.model === 'string' && image.model !== '') parts.push(`${image.model}`)
     if (typeof image.size === 'string' && image.size !== '') parts.push(image.size)
     return parts.join(' · ')
   })()
+
+  const name = fileNameOf(image, index)
 
   return (
     <div className={css.image}>
@@ -195,14 +278,42 @@ function ImageRow(props: {
                 alt={image.prompt}
                 loading="lazy"
               />
-              <a
-                className={css.download}
-                href={url}
-                download={fileNameOf(image, index)}
-                title={t('toolviewDownload')}
-              >
-                {t('toolviewDownload')}
-              </a>
+              <div className={css.actions}>
+                <button
+                  type="button"
+                  className={css.action}
+                  onClick={() => onView(url, name)}
+                  title={t('toolviewView')}
+                >
+                  {t('toolviewView')}
+                </button>
+                <button
+                  type="button"
+                  className={css.action}
+                  onClick={handleEdit}
+                  disabled={editState === 'staging'}
+                  title={t('toolviewEdit')}
+                >
+                  {editState === 'staging' ? t('toolviewEditing') : t('toolviewEdit')}
+                </button>
+                <a
+                  className={css.action}
+                  href={url}
+                  download={name}
+                  title={t('toolviewDownload')}
+                >
+                  {t('toolviewDownload')}
+                </a>
+                <button
+                  type="button"
+                  className={css.action}
+                  onClick={handleOpen}
+                  disabled={openState === 'opening'}
+                  title={t('toolviewOpen')}
+                >
+                  {openState === 'opening' ? t('toolviewOpening') : t('toolviewOpen')}
+                </button>
+              </div>
             </>
           )
           : failed !== undefined
@@ -212,6 +323,15 @@ function ImageRow(props: {
       <div className={css.caption}>
         {meta !== '' ? <p className={css.captionLine}>{meta}</p> : null}
         {image.prompt !== '' ? <p className={`${css.captionLine} ${css.captionPrompt}`}>{image.prompt}</p> : null}
+        {editState === 'staged'
+          ? <p className={`${css.captionLine} ${css.editReady}`}>{t('toolviewEditReady')}</p>
+          : null}
+        {editState === 'failed' && editError !== undefined
+          ? <p className={`${css.captionLine} ${css.actionError}`}>{t('toolviewEditFailed')}：{editError}</p>
+          : null}
+        {openState === 'failed' && openError !== undefined
+          ? <p className={`${css.captionLine} ${css.actionError}`}>{t('toolviewOpenFailed')}：{openError}</p>
+          : null}
       </div>
     </div>
   )

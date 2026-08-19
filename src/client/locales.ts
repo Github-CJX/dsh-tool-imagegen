@@ -48,6 +48,44 @@ export type ImageGenLocaleKey =
   | 'toolviewRunning'
   | 'toolviewFailed'
   | 'toolviewDownload'
+  | 'toolviewView'
+  | 'toolviewOpen'
+  | 'toolviewOpening'
+  | 'toolviewOpenFailed'
+  | 'toolviewEdit'
+  | 'toolviewEditing'
+  | 'toolviewEditReady'
+  | 'toolviewEditFailed'
+  | 'uploadTitle'
+  | 'uploadHelp'
+  | 'uploading'
+  | 'uploaded'
+  | 'uploadFailed'
+  | 'uploadTooLarge'
+  | 'uploadTypeRejected'
+  | 'uploadSelected'
+  | 'uploadRemove'
+  | 'storageTitle'
+  | 'storageDescription'
+  | 'storageUploads'
+  | 'storageAttachments'
+  | 'storageCleanup'
+  | 'storageCleaning'
+  | 'storageCleanupDone'
+  | 'storageFailed'
+  | 'image.label'
+  | 'image.openOriginal'
+  | 'image.openOriginalLabel'
+  | 'image.loading'
+  | 'image.loadFailed'
+  | 'image.preview'
+  | 'image.closePreview'
+  | 'message.extraBlock'
+  | 'json.truncated'
+  | 'copy'
+  | 'copied'
+  | 'clock.md'
+  | 'clock.ymd'
 
 export const zh: Record<ImageGenLocaleKey, string> = {
   cardTitle: '生图插件',
@@ -92,6 +130,44 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   toolviewRunning: '正在生成…',
   toolviewFailed: '生成失败',
   toolviewDownload: '下载图片',
+  toolviewView: '全屏查看',
+  toolviewOpen: '本地打开',
+  toolviewOpening: '正在打开…',
+  toolviewOpenFailed: '打开失败',
+  toolviewEdit: '修改',
+  toolviewEditing: '处理中…',
+  toolviewEditReady: '已加入待发送：输入修改需求后发送',
+  toolviewEditFailed: '操作失败',
+  uploadTitle: '上传图片',
+  uploadHelp: '当前模型不支持直接传图：点击上传参考图，模型会收到图片路径，可基于它生成或修改。',
+  uploading: '上传中…',
+  uploaded: '已上传',
+  uploadFailed: '上传失败',
+  uploadTooLarge: '图片超过 5MB 上限',
+  uploadTypeRejected: '仅支持 PNG / JPEG / WebP / GIF',
+  uploadSelected: '已选图片，输入消息后发送',
+  uploadRemove: '移除图片',
+  storageTitle: '生图存储',
+  storageDescription: '上传参考图与生成图片的占用与清理。',
+  storageUploads: '上传文件',
+  storageAttachments: '附件对象',
+  storageCleanup: '清理未引用文件',
+  storageCleaning: '清理中…',
+  storageCleanupDone: '已清理：上传 {uploads} 个、附件 {attachments} 个，共释放 {bytes}',
+  storageFailed: '存储操作失败',
+  'image.label': '图片',
+  'image.openOriginal': '查看原图',
+  'image.openOriginalLabel': '打开原图 {label}',
+  'image.loading': '加载中…',
+  'image.loadFailed': '加载失败',
+  'image.preview': '图片预览',
+  'image.closePreview': '关闭预览',
+  'message.extraBlock': '附加内容',
+  'json.truncated': '…已截断（共 {total} 项）',
+  copy: '复制',
+  copied: '已复制',
+  'clock.md': '{m}月{d}日',
+  'clock.ymd': '{y}年{m}月{d}日',
 }
 
 export const en: Record<ImageGenLocaleKey, string> = {
@@ -137,4 +213,42 @@ export const en: Record<ImageGenLocaleKey, string> = {
   toolviewRunning: 'Generating…',
   toolviewFailed: 'Generation failed',
   toolviewDownload: 'Download image',
+  toolviewView: 'View fullscreen',
+  toolviewOpen: 'Open locally',
+  toolviewOpening: 'Opening…',
+  toolviewOpenFailed: 'Open failed',
+  toolviewEdit: 'Edit',
+  toolviewEditing: 'Preparing…',
+  toolviewEditReady: 'Added as edit reference — type your request and send',
+  toolviewEditFailed: 'Edit failed',
+  uploadTitle: 'Upload image',
+  uploadHelp: 'This model cannot take images directly: upload a reference and the model receives its path for image-to-image.',
+  uploading: 'Uploading…',
+  uploaded: 'Uploaded',
+  uploadFailed: 'Upload failed',
+  uploadTooLarge: 'Image exceeds the 5MB limit',
+  uploadTypeRejected: 'Only PNG / JPEG / WebP / GIF are supported',
+  uploadSelected: 'Image selected — type a message and send',
+  uploadRemove: 'Remove image',
+  storageTitle: 'Image storage',
+  storageDescription: 'Space used by reference uploads and generated images, with orphan cleanup.',
+  storageUploads: 'Upload files',
+  storageAttachments: 'Attachment objects',
+  storageCleanup: 'Clean up unreferenced files',
+  storageCleaning: 'Cleaning…',
+  storageCleanupDone: 'Removed {uploads} upload(s) and {attachments} attachment(s), freeing {bytes}',
+  storageFailed: 'Storage operation failed',
+  'image.label': 'Image',
+  'image.openOriginal': 'Open original',
+  'image.openOriginalLabel': 'Open original {label}',
+  'image.loading': 'Loading…',
+  'image.loadFailed': 'Load failed',
+  'image.preview': 'Image preview',
+  'image.closePreview': 'Close preview',
+  'message.extraBlock': 'Additional content',
+  'json.truncated': '…truncated ({total} total)',
+  copy: 'Copy',
+  copied: 'Copied',
+  'clock.md': '{m}/{d}',
+  'clock.ymd': '{y}-{m}-{d}',
 }

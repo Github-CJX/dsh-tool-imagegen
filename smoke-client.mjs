@@ -44,9 +44,20 @@ function snapshotStore(initial) {
 }
 
 const externals = {
-  'react': { useState: () => {}, useEffect: () => {}, useCallback: () => {} },
+  'react': { useState: () => {}, useEffect: () => {}, useCallback: () => {}, useSyncExternalStore: () => undefined, memo: (fn) => fn },
   'react/jsx-runtime': { jsx: () => {}, jsxs: () => {}, Fragment: Symbol('Fragment'), jsxDEV: () => {} },
   '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore: snapshotStore },
+  // Only imported at component-render time (never rendered in the smoke run);
+  // the specifiers must simply resolve.
+  '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null },
+  '@deepseek-ai/dsh-client-ui-primitives': {
+    IconCheckOutline16: () => null,
+    IconCopyOutline16: () => null,
+    JsonBlock: () => null,
+    MessageText: () => null,
+    Tooltip: ({ children }) => children,
+    writeClipboard: async () => true,
+  },
 }
 
 const require = (spec) => {
@@ -89,16 +100,25 @@ try {
 check('factory returned an object', typeof exports === 'object' && exports !== null)
 check('exports.apply is a function', typeof exports?.apply === 'function')
 check('exports.inject is a string array', Array.isArray(exports?.inject) && exports.inject.every((s) => typeof s === 'string'))
-check('inject waits on slots/locale/connection', ['slots', 'locale', 'connection'].every((s) => exports?.inject.includes(s)))
+check('inject waits on slots/locale/connection/conversation', ['slots', 'locale', 'connection', 'conversation'].every((s) => exports?.inject.includes(s)))
 
 // --- run apply() against a stubbed ctx --------------------------------------
 
 const registrations = []
+let wrappedSend = null
+const conversationStub = {
+  async sendSession(session, text, imageIds, mode) {
+    conversationStub.calls.push({ session, text, imageIds, mode })
+    return { ok: true }
+  },
+  calls: [],
+}
 const ctx = {
   effect(fn) { fn() },
   locale: { register() {} },
   get(name) {
     if (name === 'connection') return { isLoopback: true }
+    if (name === 'conversation') return conversationStub
     return undefined
   },
   on() { return () => {} },
@@ -115,15 +135,43 @@ try {
   console.log('\napply:')
   check('apply() ran without throwing', true)
   check('no console.warn from apply (no registration failures)', warnings.length === 0)
-  const card = registrations.find((r) => r.name === 'settings.plugin.item')
+  const cards = registrations.filter((r) => r.name === 'settings.plugin.item')
+  const card = cards.find((r) => r.id === 'imagegen')
+  const maintenance = cards.find((r) => r.id === 'imagegen-maintenance')
   const toolview = registrations.find((r) => r.name === 'tool.call.toolview')
+  const upload = registrations.find((r) => r.name === 'conversation.input.left')
+  const bubble = registrations.find((r) => r.name === 'conversation.chat.node')
   check('settings.plugin.item card registered', card !== undefined)
   check('settings card locale is dsh-imagegen', card?.locale === 'dsh-imagegen')
+  check('maintenance settings card registered', maintenance !== undefined && maintenance.locale === 'dsh-imagegen')
+  check('maintenance card inject returns a fetchFn', typeof maintenance?.inject?.()?.fetchFn === 'function')
   check('tool.call.toolview registered keyed by generate_image', toolview !== undefined && toolview.key === 'generate_image')
   check('toolview inject returns a loadImage face', typeof toolview?.inject?.()?.loadImage === 'function')
-  const bridge = toolview?.inject?.('session-1')?.loadImage?.({ attachmentId: 'att-42' })
+  const toolFace = toolview?.inject?.('session-1')
+  const bridge = toolFace?.loadImage?.({ attachmentId: 'att-42' })
   check('loadImage returns a thenable bridge URL', typeof bridge?.then === 'function')
   check('bridge URL carries session and id', source.includes('dsh-tool-imagegen/attachment') && source.includes('encodeURIComponent(attachment.attachmentId)'))
+  check('toolview face carries openLocally', typeof toolFace?.openLocally === 'function')
+  check('openLocally posts to the local-open bridge', source.includes('dsh-tool-imagegen/open'))
+  check('toolview face carries stageEdit (modify button)', typeof toolFace?.stageEdit === 'function')
+  check('stageEdit readiness copy is in the bundle', source.includes('已加入待发送'))
+  check('conversation.input.left upload button registered', upload !== undefined && upload.id === 'imagegen-upload')
+  check('upload button locale is dsh-imagegen', upload?.locale === 'dsh-imagegen')
+  const uploadFace = upload?.inject?.()
+  check('upload inject returns fetchFn + connection', typeof uploadFace?.fetchFn === 'function' && uploadFace?.connection?.isLoopback === true)
+  check('conversation.sendSession was wrapped (instance method patched)', typeof conversationStub.sendSession === 'function' && conversationStub.calls.length === 0)
+  wrappedSend = conversationStub.sendSession
+  check('conversation.chat.node user shadow at priority -1', bubble !== undefined && bubble.key === 'user' && bubble.priority === -1)
+  check('user shadow locale is dsh-imagegen', bubble?.locale === 'dsh-imagegen')
+  // The sendSession wrapper must be a pass-through without a pending draft:
+  // the drafts-less branch executes synchronously, so the forward (recorded
+  // on the stub) is observable right after the call.
+  const before = conversationStub.calls.length
+  const resultPromise = wrappedSend({ sessionId: 'session-no-draft' }, 'hello', [], 'queue')
+  check('sendSession wrapper forwards drafts-less sends', typeof resultPromise?.then === 'function' && conversationStub.calls.length === before + 1)
+  const forwarded = conversationStub.calls[conversationStub.calls.length - 1]
+  check('forwarded call preserves args', forwarded?.session?.sessionId === 'session-no-draft' && forwarded?.text === 'hello' && forwarded?.mode === 'queue')
+  check('sendSession wrapper carries upload-bridge interception (pending draft path)', source.includes('dsh-tool-imagegen/upload'))
 } catch (error) {
   failures += 1
   console.log(`FAIL  apply threw: ${error instanceof Error ? error.stack : String(error)}`)

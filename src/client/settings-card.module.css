@@ -241,6 +241,23 @@
   color: var(--dsw-alias-label-error);
 }
 
+/* Storage-maintenance card lines (sizes / cleanup outcome). */
+.storageLine {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.saved {
+  flex: 1;
+  min-width: 0;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-success-primary, var(--dsw-static-deepseek-500));
+}
+
 .discard,
 .save {
   appearance: none;

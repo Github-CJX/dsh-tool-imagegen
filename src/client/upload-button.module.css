@@ -1,0 +1,108 @@
+/**
+ * Composer tool-row seat for the text-model upload button. Sits at the left
+ * end of the tool row inside the composer card, beside the resident chrome
+ * (access mode / plan / attach) — one compact always-visible control. Uses the
+ * platform's own alias tokens so it reads as part of the bar.
+ */
+
+.wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.button {
+  height: 28px;
+  min-width: 68px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 24px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.button[data-state='done'] {
+  color: var(--dsw-alias-state-success-primary, var(--dsw-static-deepseek-500));
+}
+
+/* Pending-draft chip: the picked image waits for the user's message, then the
+ * send submits it together with the typed text. */
+.selected {
+  height: 28px;
+  max-width: 220px;
+  padding: 0 4px 0 10px;
+  border-radius: 14px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selected:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.hidden {
+  display: none;
+}
+
+/* Floating failure note below the row (the tool row is one line tall). */
+.error {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  max-width: 260px;
+  background: var(--dsw-specific-bubble);
+  color: var(--dsw-alias-state-error-primary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: var(--dsw-shadow-lv2);
+}
