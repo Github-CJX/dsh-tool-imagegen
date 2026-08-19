@@ -12,6 +12,9 @@
 
 <img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/0db997cc-378a-43c7-8a75-5956fdb1971f" />
 
+<img width="1920" height="1039" alt="image" src="https://github.com/user-attachments/assets/ddd551d4-0b1f-4dfb-ac68-a4cda361c129" />
+
+<img width="1920" height="1041" alt="image" src="https://github.com/user-attachments/assets/f8f1abc3-5d47-4ca9-977d-7f39af08d9b6" />
 
 ## 特性
 
