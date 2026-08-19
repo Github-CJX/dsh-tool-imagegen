@@ -50,14 +50,7 @@ cd C:/Users/CJX/.dsh/profiles/desktop
 pnpm install
 ```
 
-安装后确认插件已正确链接：
-
-```bash
-ls -la node_modules/@local/
-# dsh-tool-imagegen -> C:/Users/CJX/.dsh/plugins/dsh-tool-imagegen  （符号链接/junction）
-```
-
-> 若发现链接变成了「拷贝的旧副本」（内容与插件目录不一致），删除 `node_modules/@local/dsh-tool-imagegen` 后重新 `pnpm install`，或手动重建链接。
+> **注意：`file:` 依赖安装为实体拷贝，不是符号链接。** pnpm 把 `dsh-tool-imagegen` 整个目录拷贝到 `node_modules/@local/dsh-tool-imagegen`，DSH 实际加载的是**这份拷贝**。因此修改插件源目录后，必须重新同步拷贝才能生效（见下文「升级 / 重装」），改源码不重启不会生效——这是预期行为，不是 bug。
 
 ### 4. 配置
 
@@ -101,14 +94,23 @@ dsh-imagegen:
 
 ## 升级 / 重装
 
+插件仓库自带同步脚本，一条命令完成「清掉拷贝 → 重装 → 校验」：
+
 ```bash
-# 替换插件源码后：
-rm -rf node_modules/@local/dsh-tool-imagegen   # 先清掉旧链接/副本
+cd C:/Users/CJX/.dsh/plugins/dsh-tool-imagegen
+node sync-profile.mjs                # 默认 profile；可用 --profile <path> 指定
+# 重启 DSH（必须完全退出所有进程）
+```
+
+手动操作等价的步骤：
+
+```bash
+rm -rf node_modules/@local/dsh-tool-imagegen   # 清掉旧拷贝
 cd C:/Users/CJX/.dsh/profiles/desktop && pnpm install
 # 重启 DSH
 ```
 
-客户端部分修改后需要重建（`node build-client.mjs`）；宿主侧（lib/）修改直接生效。
+客户端部分修改后需要重建（`node build-client.mjs`）再同步；宿主侧（lib/）修改直接生效。
 
 ## 卸载
 
