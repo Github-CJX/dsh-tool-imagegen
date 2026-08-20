@@ -20,10 +20,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the `tool.call.toolview` keyed slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-tool'
 import { en, zh, type ImageGenLocaleKey } from './locales.ts'
-import { ImageGenSettingsCard, ImageGenSettingsCardController } from './SettingsCard.tsx'
+import { ImageGenSettingsCard, ImageGenSettingsCardController, type ImageGenSettingsCardFace } from './SettingsCard.tsx'
 import { bindImageGenScope, type ImageGenScope } from './settings-scope.ts'
 import { GenerateImageView, type GenerateImageViewFace } from './GenerateImageView.tsx'
-import { MaintenanceCard, type MaintenanceCardFace } from './MaintenanceCard.tsx'
+import { type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import { UploadButton, type UploadButtonFace } from './UploadButton.tsx'
 import { UploadedImageBubble } from './UploadedImageBubble.tsx'
 import { ATTACHMENT_API, OPEN_API, UPLOAD_API } from './protocol.ts'
@@ -54,13 +54,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
      * The official plugin-configuration slot the Settings → Plugins →
-     * Configurable tab declares and renders. This card registers there as its
-     * own standalone card — independent of the dsh-web-ui family group — so
-     * this plugin never reads as part of that family. Spelled here with the
+     * Configurable tab declares and renders. rc.7 made it a KEYED slot whose
+     * key is the settings namespace the card edits; the tab only dispatches
+     * namespaces the host settings service serves (settings.describe). This
+     * card registers under the dsh-imagegen key it owns. Spelled here with the
      * same shape so this package can register without depending on the sibling
      * UI package.
      */
-    'settings.plugin.item': { kind: 'list'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
+    'settings.plugin.item': { kind: 'keyed'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
   }
 }
 
@@ -100,15 +101,21 @@ export function apply(ctx: ClientContext): void {
 
   // Plugin configuration card: one staged form over the `dsh-imagegen` scope,
   // registered into the official plugin-configuration slot (Settings →
-  // Plugins → Configurable) as a standalone card.
+  // Plugins → Configurable). rc.7 keyed the slot by settings namespace, so the
+  // registration key is the namespace it edits — and the storage-maintenance
+  // section (a second card in rc.6) now lives INSIDE this card, because a
+  // keyed slot holds one entry per key.
   try {
     const settingsCard = new ImageGenSettingsCardController(scope)
     ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
       name: 'settings.plugin.item',
-      id: 'imagegen',
+      key: NS,
       order: 30,
       locale: NS,
-      inject: () => settingsCard.inject(),
+      inject: (): ImageGenSettingsCardFace => ({
+        ...settingsCard.inject(),
+        maintenance: { fetchFn: bridgeFetch },
+      }),
     }, ImageGenSettingsCard))
   } catch (error) {
     console.warn('[dsh-tool-imagegen] settings card registration failed:', error)
@@ -192,20 +199,6 @@ export function apply(ctx: ClientContext): void {
     }, UploadButton))
   } catch (error) {
     console.warn('[dsh-tool-imagegen] upload button registration failed:', error)
-  }
-
-  // Storage-maintenance card: sizes + one-click orphan cleanup, as its own
-  // settings card beside the generator settings card.
-  try {
-    ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-      name: 'settings.plugin.item',
-      id: 'imagegen-maintenance',
-      order: 31,
-      locale: NS,
-      inject: (): MaintenanceCardFace => ({ fetchFn: uploadFace.fetchFn }),
-    }, MaintenanceCard))
-  } catch (error) {
-    console.warn('[dsh-tool-imagegen] maintenance card registration failed:', error)
   }
 
   // Send-time interception: wrap the platform conversation service's

@@ -8,8 +8,8 @@
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { zstdCompressSync } from 'node:zlib'
-import { cleanupOrphans, collectFromValue, collectPersistedReferences, emptyReferences, storageStats } from './lib/maintenance.js'
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib'
+import { cleanupOrphans, collectFromValue, collectPersistedReferences, decodeSessionLog, emptyReferences, encodeSessionLog, scanZstdFrames, storageStats } from './lib/maintenance.js'
 
 let failures = 0
 const check = (label, ok) => {
@@ -121,6 +121,62 @@ await writeFile(join(attachmentsDir, 'objects', '33', '3333'), Buffer.alloc(60, 
     await readdir(join(attachmentsDir, 'objects', '33')),
   )
   check('referenced + live objects survive', objects.includes('1111') && objects.includes('3333') && !objects.includes('2222'))
+}
+
+// --- multi-frame zstd logs (rc.7 append-style) --------------------------------
+
+{
+  const frames = await mkdtemp(join(tmpdir(), 'imagegen-frames-'))
+  const uploadDir = join(frames, 'uploads')
+  const attachmentsDir = join(frames, 'attachments', 'v1')
+  const sessionsDir = join(frames, 'sessions')
+  await mkdir(uploadDir, { recursive: true })
+  await mkdir(join(attachmentsDir, 'objects', 'aa'), { recursive: true })
+  const sessionDir = join(sessionsDir, '--proj--', 'session-9')
+  await mkdir(sessionDir, { recursive: true })
+
+  // Frame 1: session header only. Frame 2: a reference. Frame 3: another.
+  const frame1 = JSON.stringify({ type: 'session', id: 's' }) + '\n'
+  const frame2 = JSON.stringify({
+    data: { message: { content: [
+      { type: 'generated-image', attachment: { attachmentId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
+    ] } },
+  }) + '\n'
+  const frame3 = JSON.stringify({
+    data: { content: [
+      { type: 'uploaded-image', path: join(uploadDir, 'framed.png'), attachment: { attachmentId: 'bbbb' } },
+    ] },
+  }) + '\n'
+  const log = encodeSessionLog([frame1, frame2, frame3])
+  await writeFile(join(sessionDir, 'session.jsonl.zstd'), log)
+
+  // Sanity: the container really is multi-frame, and a whole-buffer decompress
+  // would only see the first frame (the exact regression this test guards).
+  const { frames: ranges } = scanZstdFrames(log)
+  check('encodeSessionLog produces a multi-frame container', ranges.length === 3)
+  check('naive whole-buffer decompress misses later frames', zstdDecompressSync(log).toString('utf8').split('\n').filter(Boolean).length === 1)
+  const { text, torn } = decodeSessionLog(log)
+  check('decodeSessionLog yields every frame', !torn && text.split('\n').filter(Boolean).length === 3)
+
+  await writeFile(join(uploadDir, 'framed.png'), Buffer.alloc(10, 1))
+  await writeFile(join(attachmentsDir, 'objects', 'aa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), Buffer.alloc(20, 2))
+  await writeFile(join(attachmentsDir, 'objects', 'aa', 'bbbb'), Buffer.alloc(30, 3))
+
+  const refs = emptyReferences()
+  await collectPersistedReferences(sessionsDir, refs)
+  check('multi-frame refs collected across all frames', refs.paths.has(join(uploadDir, 'framed.png')) && refs.ids.has('sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'))
+
+  const result = await cleanupOrphans({ list: () => [] }, {
+    sessionsRoot: sessionsDir,
+    uploadsRoot: uploadDir,
+    attachmentsRoot: attachmentsDir,
+  })
+  check('prefixed attachmentId protects its bare-hex object', result.attachments.removed === 0)
+  check('framed upload survives (referenced from frame 3)', result.uploads.removed === 0)
+  const survivors = await readdir(join(attachmentsDir, 'objects', 'aa'))
+  check('both prefixed-referenced objects survive', survivors.length === 2)
+
+  await rm(frames, { recursive: true, force: true })
 }
 
 await rm(root, { recursive: true, force: true })

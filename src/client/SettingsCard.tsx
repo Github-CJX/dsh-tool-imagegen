@@ -11,6 +11,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import type { ImageGenScope } from './settings-scope.ts'
+import { StorageSection, type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import css from './settings-card.module.css'
 
 /** The fields this card edits (the namespace's full schema). */
@@ -50,6 +51,8 @@ export interface ImageGenSettingsCardFace extends CardActions {
     /** Whether a secret (apiKey) is currently stored. */
     imageGenKeySet: SnapshotStore<boolean>
   }
+  /** Storage-maintenance face for the embedded cleanup section (rc.7: one card per key). */
+  maintenance: MaintenanceCardFace
 }
 
 /** Bridges the imagegen scope onto the card's staged form. */
@@ -116,7 +119,7 @@ export type ImageGenSettingsCardProps =
  * @returns the card, or nothing while the namespace is still loading.
  */
 export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
-  const { t } = props
+  const { t, maintenance } = props
   const state = props.useImageGenSettingsCard(snapshot => snapshot)
   const keySet = props.useImageGenKeySet(snapshot => snapshot)
   const [open, setOpen] = useState(false)
@@ -274,6 +277,7 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
                 {t(!state.saving ? 'save' : 'saving')}
               </button>
             </div>
+            <StorageSection t={t} fetchFn={maintenance.fetchFn} />
           </div>
         )
         : null}

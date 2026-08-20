@@ -1,28 +1,25 @@
 /**
- * The dsh-tool-imagegen storage-maintenance card: shows how much space the
+ * The dsh-tool-imagegen storage-maintenance section: shows how much space the
  * upload work dir and the attachment store occupy, and offers a one-click
  * orphan cleanup — files no session (live or persisted) references are
- * removed, and the freed space is reported. Registered into the official
- * `settings.plugin.item` slot as its own card, beside the generator settings
- * card, bound to the loopback maintenance bridge.
+ * removed, and the freed space is reported.
+ *
+ * rc.7 keyed the `settings.plugin.item` slot by settings namespace (one entry
+ * per key), so this is no longer a standalone card: it renders as a section
+ * INSIDE the generator settings card (see SettingsCard.tsx), bound to the
+ * same loopback maintenance bridge.
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { MAINTENANCE_API } from './protocol.ts'
 import css from './settings-card.module.css'
 
-/** The registrant-side face the card's slot entry injects. */
+/** The face the settings card's slot entry injects (fed from index.ts). */
 export interface MaintenanceCardFace {
   /** Same-origin fetch for the loopback maintenance routes. */
   fetchFn: typeof fetch
 }
-
-/** Props the composed settings entry receives. */
-export type MaintenanceCardProps =
-  PropsRuntime<'settings.plugin.item'>
-  & PropsLocale<'dsh-imagegen'>
-  & MaintenanceCardFace
 
 /** One storage area's size summary. */
 interface AreaStats {
@@ -38,19 +35,23 @@ function formatBytes(bytes: number): string {
 }
 
 /** Line copy for one area (e.g. "上传文件 3 个 · 2.1 MiB"). */
-function areaLabel(t: MaintenanceCardProps['t'], area: AreaStats | undefined, key: 'storageUploads' | 'storageAttachments'): string {
+function areaLabel(t: PropsLocale<'dsh-imagegen'>['t'], area: AreaStats | undefined, key: 'storageUploads' | 'storageAttachments'): string {
   if (area === undefined) return `${t(key)} · ${t('loading')}`
   return `${t(key)} ${area.count} · ${formatBytes(area.bytes)}`
 }
 
+/** Props the section receives from the settings card. */
+export interface StorageSectionProps extends MaintenanceCardFace {
+  /** Locale copy bound by the settings card. */
+  t: PropsLocale<'dsh-imagegen'>['t']
+}
+
 /**
- * Render the maintenance card.
+ * Render the storage section inside the settings card body.
  * @param props - locale copy + the loopback fetch face.
- * @returns the card, or nothing while the namespace is still loading.
+ * @returns the section.
  */
-export function MaintenanceCard(props: MaintenanceCardProps) {
-  const { t, fetchFn } = props
-  const [open, setOpen] = useState(false)
+export function StorageSection({ t, fetchFn }: StorageSectionProps) {
   const [uploads, setUploads] = useState<AreaStats | undefined>(undefined)
   const [attachments, setAttachments] = useState<AreaStats | undefined>(undefined)
   const [running, setRunning] = useState(false)
@@ -79,11 +80,10 @@ export function MaintenanceCard(props: MaintenanceCardProps) {
     }
   }, [fetchFn, t])
 
-  // Load the sizes when the card opens.
+  // Load the sizes when the section mounts (the card body renders lazily).
   useEffect(() => {
-    if (!open) return
     void refresh()
-  }, [open, refresh])
+  }, [refresh])
 
   const onCleanup = useCallback(async () => {
     setRunning(true)
@@ -116,43 +116,23 @@ export function MaintenanceCard(props: MaintenanceCardProps) {
     }
   }, [fetchFn, t, refresh])
 
-  const title = t('storageTitle')
-
   return (
-    <li className={css.card}>
-      <button
-        type="button"
-        className={css.header}
-        aria-expanded={open}
-        aria-label={`${t(open ? 'collapse' : 'expand')}: ${title}`}
-        onClick={() => { setOpen(!open) }}
-      >
-        <span className={css.headText}>
-          <span className={css.name}>{title}</span>
-          <span className={css.description}>{t('storageDescription')}</span>
-        </span>
-        <span className={open ? css.chevronOpen : css.chevron}>▾</span>
-      </button>
-      {open
-        ? (
-          <div className={css.body}>
-            <p className={css.storageLine}>{areaLabel(t, uploads, 'storageUploads')}</p>
-            <p className={css.storageLine}>{areaLabel(t, attachments, 'storageAttachments')}</p>
-            {error !== undefined ? <p className={css.failed} role="status">{error}</p> : null}
-            {report !== undefined ? <p className={css.saved} role="status">{report}</p> : null}
-            <div className={css.footer}>
-              <button
-                type="button"
-                className={css.save}
-                disabled={running}
-                onClick={() => { void onCleanup() }}
-              >
-                {t(running ? 'storageCleaning' : 'storageCleanup')}
-              </button>
-            </div>
-          </div>
-        )
-        : null}
-    </li>
+    <div className={css.storageSection}>
+      <p className={css.storageHeading}>{t('storageTitle')}</p>
+      <p className={css.storageLine}>{areaLabel(t, uploads, 'storageUploads')}</p>
+      <p className={css.storageLine}>{areaLabel(t, attachments, 'storageAttachments')}</p>
+      {error !== undefined ? <p className={css.failed} role="status">{error}</p> : null}
+      {report !== undefined ? <p className={css.saved} role="status">{report}</p> : null}
+      <div className={css.footer}>
+        <button
+          type="button"
+          className={css.save}
+          disabled={running}
+          onClick={() => { void onCleanup() }}
+        >
+          {t(running ? 'storageCleaning' : 'storageCleanup')}
+        </button>
+      </div>
+    </div>
   )
 }

@@ -241,7 +241,22 @@
   color: var(--dsw-alias-label-error);
 }
 
-/* Storage-maintenance card lines (sizes / cleanup outcome). */
+/* Storage-maintenance section (embedded in the settings card body). */
+.storageSection {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.storageHeading {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Storage-maintenance lines (sizes / cleanup outcome). */
 .storageLine {
   margin: 0 0 4px;
   font-size: 13px;
