@@ -16,11 +16,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # node:zlib zstd APIs require Node 22+ (multi-frame session logs)
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Host tests
+        run: node test-engine.mjs && node test-maintenance.mjs && node test-routes-open.mjs
 
       - name: Build client bundle
         run: node build-client.mjs
