@@ -89,7 +89,7 @@ const ENUM_OPTIONS: Record<string, string[]> = {
 
 /** Official gpt-image-2 canvas sizes (最大边 ≤ 3840px；'auto' = 上游默认).
  *  A suggestion list only — any size the upstream accepts can be typed. */
-const SIZE_OPTIONS = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152', '3840x2160', '2160x3840']
+const SIZE_OPTIONS = ['auto', '512x512', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152', '3840x2160', '2160x3840']
 
 /** The registration-side face the card's slot entry injects. */
 export interface ImageGenSettingsCardFace extends CardActions {
@@ -309,21 +309,21 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               onChecked={(checked) => { props.edit('quality_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.quality}
-              disabled={disabled || state.quality_enabled.text !== 'true'}
+              locked={state.quality_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('quality', text) }}
               onReset={() => { props.resetField('quality') }}
             />
             <ValueField
               id="dsh-imagegen-settings-output-format"
               label={t('fieldOutputFormat')}
-              hint={state.output_format_enabled.text === 'true' ? t('fieldOutputFormatHelp') : t('fieldGatedHint')}
+              hint={state.output_format_enabled.text === 'true' ? t('fieldOutputFormatHelp') : t('fieldUnsupportedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.output_format}
               checked={state.output_format_enabled.text === 'true'}
               onChecked={(checked) => { props.edit('output_format_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.output_format}
-              disabled={disabled || state.output_format_enabled.text !== 'true'}
+              locked={state.output_format_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('output_format', text) }}
               onReset={() => { props.resetField('output_format') }}
             />
@@ -337,21 +337,21 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               onChecked={(checked) => { props.edit('background_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.background}
-              disabled={disabled || state.background_enabled.text !== 'true'}
+              locked={state.background_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('background', text) }}
               onReset={() => { props.resetField('background') }}
             />
             <ValueField
               id="dsh-imagegen-settings-style"
               label={t('fieldStyle')}
-              hint={state.style_enabled.text === 'true' ? t('fieldStyleHelp') : t('fieldGatedHint')}
+              hint={state.style_enabled.text === 'true' ? t('fieldStyleHelp') : t('fieldUnsupportedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.style}
               checked={state.style_enabled.text === 'true'}
               onChecked={(checked) => { props.edit('style_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.style}
-              disabled={disabled || state.style_enabled.text !== 'true'}
+              locked={state.style_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('style', text) }}
               onReset={() => { props.resetField('style') }}
             />
@@ -365,21 +365,21 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               onChecked={(checked) => { props.edit('moderation_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.moderation}
-              disabled={disabled || state.moderation_enabled.text !== 'true'}
+              locked={state.moderation_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('moderation', text) }}
               onReset={() => { props.resetField('moderation') }}
             />
             <ValueField
               id="dsh-imagegen-settings-watermark"
               label={t('fieldWatermark')}
-              hint={state.watermark_enabled.text === 'true' ? t('fieldWatermarkHelp') : t('fieldGatedHint')}
+              hint={state.watermark_enabled.text === 'true' ? t('fieldWatermarkHelp') : t('fieldUnsupportedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.watermark}
               checked={state.watermark_enabled.text === 'true'}
               onChecked={(checked) => { props.edit('watermark_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.watermark}
-              disabled={disabled || state.watermark_enabled.text !== 'true'}
+              locked={state.watermark_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('watermark', text) }}
               onReset={() => { props.resetField('watermark') }}
             />
@@ -500,6 +500,9 @@ function ValueField(props: FieldProps & {
   checked?: boolean
   /** Stage the enable-switch state the checkbox edits. */
   onChecked?: (checked: boolean) => void
+  /** Parameter disabled by its unchecked enable box (locks the input only —
+   *  the checkbox itself must stay clickable so it can be turned on). */
+  locked?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [focusIndex, setFocusIndex] = useState(0)
@@ -525,8 +528,16 @@ function ValueField(props: FieldProps & {
   }, [open])
 
   const needle = props.text.trim().toLowerCase()
+  // Filter by substring while typing, BUT show every option when the current
+  // text is an exact option value — otherwise opening the panel with the
+  // default value (e.g. "1024x1024") already in the box filters the list down
+  // to that single option and the dropdown looks empty of alternatives.
+  const exactMatch = props.comboOptions !== undefined
+    && props.comboOptions.includes(props.text.trim())
   const matches = props.comboOptions !== undefined
-    ? props.comboOptions.filter(option => option.toLowerCase().includes(needle))
+    ? (exactMatch
+      ? props.comboOptions
+      : props.comboOptions.filter(option => option.toLowerCase().includes(needle)))
     : []
   // Reset the arrow-key position when typing narrows the suggestions.
   useEffect(() => { setFocusIndex(0) }, [needle])
@@ -548,10 +559,10 @@ function ValueField(props: FieldProps & {
           {...props.invalid ? { 'aria-invalid': true } : {}}
           value={props.text}
           placeholder={props.placeholder ?? ''}
-          disabled={props.disabled}
+          disabled={props.disabled || props.locked === true}
           onChange={(event) => { props.onEdit(event.target.value) }}
-          onClick={() => { if (!props.disabled && !open) setOpen(true) }}
-          onFocus={() => { if (!props.disabled && props.text.trim() !== '') setOpen(true) }}
+          onClick={() => { if (!props.disabled && props.locked !== true && !open) setOpen(true) }}
+          onFocus={() => { if (!props.disabled && props.locked !== true && props.text.trim() !== '') setOpen(true) }}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault()
@@ -573,7 +584,7 @@ function ValueField(props: FieldProps & {
           className={css.comboToggle}
           aria-label={props.comboAriaLabel}
           aria-expanded={open}
-          disabled={props.disabled}
+          disabled={props.disabled || props.locked === true}
           onClick={() => { setOpen(!open) }}
         >
           ▾
@@ -661,7 +672,7 @@ function ValueField(props: FieldProps & {
             {...props.invalid ? { 'aria-invalid': true } : {}}
             value={props.text}
             placeholder={props.placeholder ?? ''}
-            disabled={props.disabled}
+            disabled={props.disabled || props.locked === true}
             onChange={(event) => { props.onEdit(event.target.value) }}
           />
         )}

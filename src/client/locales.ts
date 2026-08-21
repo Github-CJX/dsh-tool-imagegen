@@ -36,6 +36,7 @@ export type ImageGenLocaleKey =
   | 'fieldWatermarkHelp'
   | 'fieldOptionalPlaceholder'
   | 'fieldGatedHint'
+  | 'fieldUnsupportedHint'
   | 'comboAria'
   | 'comboEmpty'
   | 'save'
@@ -134,6 +135,7 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   fieldWatermarkHelp: 'triw / none / auto（较新参数，部分网关不支持），留空用上游默认。',
   fieldOptionalPlaceholder: '留空用上游默认',
   fieldGatedHint: '未勾选：此参数不发送给上游、模型也不可见。勾选后即可编辑使用。',
+  fieldUnsupportedHint: '此参数大部分网关不支持，如果确认支持，请自行打开。',
   comboAria: '选项列表',
   comboEmpty: '无匹配选项',
   save: '保存',
@@ -233,6 +235,7 @@ export const en: Record<ImageGenLocaleKey, string> = {
   fieldWatermarkHelp: 'triw / none / auto (newer parameter, some gateways reject it); leave empty for the upstream default.',
   fieldOptionalPlaceholder: 'Upstream default if empty',
   fieldGatedHint: 'Unchecked: not sent upstream, invisible to the model. Check to use this parameter.',
+  fieldUnsupportedHint: 'Most gateways do not support this parameter; enable it yourself only if you confirm yours does.',
   comboAria: 'Options',
   comboEmpty: 'No matching option',
   save: 'Save',
