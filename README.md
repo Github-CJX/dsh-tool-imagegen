@@ -182,7 +182,7 @@ dsh-tool-imagegen/
 ## 开发
 
 ```bash
-# 宿主侧改动：直接跑测试 + 重启 DSH
+# 宿主侧改动：直接跑测试 + 重启 DSH（CI 同样会跑这三套，Node 22）
 node test-engine.mjs && node test-maintenance.mjs && node test-routes-open.mjs
 
 # 客户端改动：重建 + 冒烟
