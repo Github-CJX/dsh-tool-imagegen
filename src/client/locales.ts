@@ -22,6 +22,28 @@ export type ImageGenLocaleKey =
   | 'fieldSizeHelp'
   | 'fieldCount'
   | 'fieldCountHelp'
+  | 'fieldQuality'
+  | 'fieldQualityHelp'
+  | 'fieldOutputFormat'
+  | 'fieldOutputFormatHelp'
+  | 'fieldBackground'
+  | 'fieldBackgroundHelp'
+  | 'fieldStyle'
+  | 'fieldStyleHelp'
+  | 'fieldModeration'
+  | 'fieldModerationHelp'
+  | 'fieldWatermark'
+  | 'fieldWatermarkHelp'
+  | 'fieldOptionalPlaceholder'
+  | 'fieldOutputFormatEnable'
+  | 'fieldOutputFormatEnableHelp'
+  | 'fieldStyleEnable'
+  | 'fieldStyleEnableHelp'
+  | 'fieldWatermarkEnable'
+  | 'fieldWatermarkEnableHelp'
+  | 'fieldGatedHint'
+  | 'comboAria'
+  | 'comboEmpty'
   | 'save'
   | 'saving'
   | 'discard'
@@ -101,9 +123,31 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   fieldModel: '模型',
   fieldModelHelp: '上游模型名，默认 gpt-image-2，可手写修改。',
   fieldSize: '尺寸',
-  fieldSizeHelp: '如 1024x1024 / 1024x1792 / 1792x1024，留空用上游默认。',
+  fieldSizeHelp: 'gpt-image-2 官方尺寸下拉可选（auto = 上游默认），也可手写任意合法尺寸（最大边 ≤ 3840px）。',
   fieldCount: '张数',
   fieldCountHelp: '一次生成几张（1–4）。',
+  fieldQuality: '画质',
+  fieldQualityHelp: 'low / medium / high，留空用上游默认。',
+  fieldOutputFormat: '输出格式',
+  fieldOutputFormatHelp: 'png / jpeg / webp，留空用上游默认。',
+  fieldBackground: '背景',
+  fieldBackgroundHelp: 'transparent / opaque / auto（图生图也适用），留空用上游默认。',
+  fieldStyle: '风格',
+  fieldStyleHelp: 'vivid / natural（部分模型/网关支持），留空用上游默认。',
+  fieldModeration: '审核档位',
+  fieldModerationHelp: 'low / medium / high（较新参数，部分网关不支持），留空用上游默认。',
+  fieldWatermark: '水印',
+  fieldWatermarkHelp: 'triw / none / auto（较新参数，部分网关不支持），留空用上游默认。',
+  fieldOptionalPlaceholder: '留空用上游默认',
+  fieldOutputFormatEnable: '启用输出格式参数',
+  fieldOutputFormatEnableHelp: '默认关闭：当前网关不兼容 output_format，传了会报「图片字节与声明格式不符」。开启后模型可传、设置可编辑、会发送给上游。',
+  fieldStyleEnable: '启用风格参数',
+  fieldStyleEnableHelp: '默认关闭：当前网关不兼容 style，直接报 Unknown parameter。开启后模型可传、设置可编辑、会发送给上游。',
+  fieldWatermarkEnable: '启用水印参数',
+  fieldWatermarkEnableHelp: '默认关闭：当前网关把 watermark 当布尔值解析，不接受 triw/none/auto。开启后模型可传、设置可编辑、会发送给上游。',
+  fieldGatedHint: '默认关闭（当前网关不兼容），开启上方开关后此参数才会发送给上游并开放给模型。',
+  comboAria: '选项列表',
+  comboEmpty: '无匹配选项',
   save: '保存',
   saving: '保存中…',
   discard: '放弃',
@@ -184,9 +228,31 @@ export const en: Record<ImageGenLocaleKey, string> = {
   fieldModel: 'Model',
   fieldModelHelp: 'Upstream model name; defaults to gpt-image-2, editable by hand.',
   fieldSize: 'Size',
-  fieldSizeHelp: 'e.g. 1024x1024 / 1024x1792 / 1792x1024; leave empty for the upstream default.',
+  fieldSizeHelp: 'Official gpt-image-2 sizes in the dropdown (auto = upstream default); any legal size (max side ≤ 3840px) can also be typed.',
   fieldCount: 'Count',
   fieldCountHelp: 'How many images to generate (1–4).',
+  fieldQuality: 'Quality',
+  fieldQualityHelp: 'low / medium / high; leave empty for the upstream default.',
+  fieldOutputFormat: 'Output format',
+  fieldOutputFormatHelp: 'png / jpeg / webp; leave empty for the upstream default.',
+  fieldBackground: 'Background',
+  fieldBackgroundHelp: 'transparent / opaque / auto (also for image-to-image); leave empty for the upstream default.',
+  fieldStyle: 'Style',
+  fieldStyleHelp: 'vivid / natural (some models/gateways); leave empty for the upstream default.',
+  fieldModeration: 'Moderation',
+  fieldModerationHelp: 'low / medium / high (newer parameter, some gateways reject it); leave empty for the upstream default.',
+  fieldWatermark: 'Watermark',
+  fieldWatermarkHelp: 'triw / none / auto (newer parameter, some gateways reject it); leave empty for the upstream default.',
+  fieldOptionalPlaceholder: 'Upstream default if empty',
+  fieldOutputFormatEnable: 'Enable output format',
+  fieldOutputFormatEnableHelp: 'Off by default: the current gateway rejects output_format ("declared type does not match its bytes"). When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
+  fieldStyleEnable: 'Enable style',
+  fieldStyleEnableHelp: 'Off by default: the current gateway rejects style ("Unknown parameter"). When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
+  fieldWatermarkEnable: 'Enable watermark',
+  fieldWatermarkEnableHelp: 'Off by default: the current gateway parses watermark as a boolean and rejects triw/none/auto. When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
+  fieldGatedHint: 'Off by default (the current gateway rejects it); flip the switch above to send it upstream and expose it to the model.',
+  comboAria: 'Options',
+  comboEmpty: 'No matching option',
   save: 'Save',
   saving: 'Saving…',
   discard: 'Discard',

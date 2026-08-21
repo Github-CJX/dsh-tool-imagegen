@@ -198,6 +198,123 @@
   outline: none;
 }
 
+/* --- editable combo (input + styled option panel, replaces the native
+     datalist popup that looked detached from the card) ------------------------ */
+
+.combo {
+  position: relative;
+}
+
+.comboInput,
+.comboInputInvalid {
+  width: 100%;
+  height: 34px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+.comboInputInvalid {
+  border-color: var(--dsw-alias-label-error);
+}
+
+.comboInput:focus-visible,
+.comboInputInvalid:focus-visible {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.comboInput:disabled,
+.comboInputInvalid:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.comboToggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 34px;
+  width: 32px;
+  border: none;
+  background: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  border-radius: 0 8px 8px 0;
+}
+
+.comboToggle:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.comboToggle:disabled {
+  cursor: default;
+}
+
+.comboToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.comboPanel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 224px;
+  overflow-y: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  padding: 4px;
+}
+
+.comboOption,
+.comboEmpty {
+  appearance: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.comboOption {
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.comboOption:hover,
+.comboOptionSelected {
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.comboOption:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+
+.comboEmpty {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
 .hint,
 .invalid {
   margin: 0;

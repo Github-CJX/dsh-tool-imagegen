@@ -6,7 +6,7 @@
  * family group, bound to the plugin's own bridge settings scope.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
@@ -23,6 +23,17 @@ export interface ImageGenSettings {
   model?: string
   size?: string
   n?: number
+  quality?: string
+  output_format?: string
+  background?: string
+  style?: string
+  moderation?: string
+  watermark?: string
+  /** Enable switches for the params the default gateway rejects (off by default:
+   *  while off, the field is locked and the value is neither sent nor advertised). */
+  output_format_enabled?: boolean
+  style_enabled?: boolean
+  watermark_enabled?: boolean
 }
 
 /** What the card renders. */
@@ -41,7 +52,39 @@ export interface ImageGenSettingsCardState extends CardShell {
   size: CardFieldState
   /** Image count (1–4). */
   n: CardFieldState
+  /** Optional quality (low/medium/high). */
+  quality: CardFieldState
+  /** Optional output format (png/jpeg/webp). */
+  output_format: CardFieldState
+  /** Optional background (transparent/opaque/auto). */
+  background: CardFieldState
+  /** Optional style (vivid/natural). */
+  style: CardFieldState
+  /** Optional moderation (low/medium/high). */
+  moderation: CardFieldState
+  /** Optional watermark (triw/none/auto). */
+  watermark: CardFieldState
+  /** Enable switch for the output_format parameter. */
+  output_format_enabled: CardFieldState
+  /** Enable switch for the style parameter. */
+  style_enabled: CardFieldState
+  /** Enable switch for the watermark parameter. */
+  watermark_enabled: CardFieldState
 }
+
+/** Enum suggestion lists for the optional upstream parameters (editable, not enforced). */
+const ENUM_OPTIONS: Record<string, string[]> = {
+  quality: ['low', 'medium', 'high'],
+  output_format: ['png', 'jpeg', 'webp'],
+  background: ['transparent', 'opaque', 'auto'],
+  style: ['vivid', 'natural'],
+  moderation: ['low', 'medium', 'high'],
+  watermark: ['triw', 'none', 'auto'],
+}
+
+/** Official gpt-image-2 canvas sizes (最大边 ≤ 3840px；'auto' = 上游默认).
+ *  A suggestion list only — any size the upstream accepts can be typed. */
+const SIZE_OPTIONS = ['auto', '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152', '3840x2160', '2160x3840']
 
 /** The registration-side face the card's slot entry injects. */
 export interface ImageGenSettingsCardFace extends CardActions {
@@ -69,6 +112,15 @@ export class ImageGenSettingsCardController {
       textField('model'),
       textField('size'),
       numberField('n'),
+      textField('quality'),
+      textField('output_format'),
+      textField('background'),
+      textField('style'),
+      textField('moderation'),
+      textField('watermark'),
+      booleanField('output_format_enabled'),
+      booleanField('style_enabled'),
+      booleanField('watermark_enabled'),
     ], {
       // The redacted wire view never returns the key; a save's outcome is
       // judged by the namespace's secrets sidecar instead.
@@ -86,6 +138,15 @@ export class ImageGenSettingsCardController {
       model: this.form.field('model'),
       size: this.form.field('size'),
       n: this.form.field('n'),
+      quality: this.form.field('quality'),
+      output_format: this.form.field('output_format'),
+      background: this.form.field('background'),
+      style: this.form.field('style'),
+      moderation: this.form.field('moderation'),
+      watermark: this.form.field('watermark'),
+      output_format_enabled: this.form.field('output_format_enabled'),
+      style_enabled: this.form.field('style_enabled'),
+      watermark_enabled: this.form.field('watermark_enabled'),
     }
   }
 
@@ -132,6 +193,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
     resetLabel: t('reset'),
     invalidLabel: t('invalidNumber'),
     disabled,
+    comboAriaLabel: t('comboAria'),
+    comboEmptyLabel: t('comboEmpty'),
   }
   if (!state.exposed) {
     return (
@@ -218,11 +281,117 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               id="dsh-imagegen-settings-size"
               label={t('fieldSize')}
               hint={t('fieldSizeHelp')}
-              placeholder="1024x1024"
+              placeholder="auto"
+              comboOptions={SIZE_OPTIONS}
               {...fieldProps}
               {...state.size}
               onEdit={(text) => { props.edit('size', text) }}
               onReset={() => { props.resetField('size') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-quality"
+              label={t('fieldQuality')}
+              hint={t('fieldQualityHelp')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.quality}
+              {...fieldProps}
+              {...state.quality}
+              onEdit={(text) => { props.edit('quality', text) }}
+              onReset={() => { props.resetField('quality') }}
+            />
+            <BooleanField
+              id="dsh-imagegen-settings-output-format-enable"
+              label={t('fieldOutputFormatEnable')}
+              hint={t('fieldOutputFormatEnableHelp')}
+              inheritLabel={t('inherit')}
+              onLabel={t('on')}
+              offLabel={t('off')}
+              {...fieldProps}
+              {...state.output_format_enabled}
+              onEdit={(text) => { props.edit('output_format_enabled', text) }}
+              onReset={() => { props.resetField('output_format_enabled') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-output-format"
+              label={t('fieldOutputFormat')}
+              hint={state.output_format_enabled.text === 'true' ? t('fieldOutputFormatHelp') : t('fieldGatedHint')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.output_format}
+              {...fieldProps}
+              {...state.output_format}
+              disabled={disabled || state.output_format_enabled.text !== 'true'}
+              onEdit={(text) => { props.edit('output_format', text) }}
+              onReset={() => { props.resetField('output_format') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-background"
+              label={t('fieldBackground')}
+              hint={t('fieldBackgroundHelp')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.background}
+              {...fieldProps}
+              {...state.background}
+              onEdit={(text) => { props.edit('background', text) }}
+              onReset={() => { props.resetField('background') }}
+            />
+            <BooleanField
+              id="dsh-imagegen-settings-style-enable"
+              label={t('fieldStyleEnable')}
+              hint={t('fieldStyleEnableHelp')}
+              inheritLabel={t('inherit')}
+              onLabel={t('on')}
+              offLabel={t('off')}
+              {...fieldProps}
+              {...state.style_enabled}
+              onEdit={(text) => { props.edit('style_enabled', text) }}
+              onReset={() => { props.resetField('style_enabled') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-style"
+              label={t('fieldStyle')}
+              hint={state.style_enabled.text === 'true' ? t('fieldStyleHelp') : t('fieldGatedHint')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.style}
+              {...fieldProps}
+              {...state.style}
+              disabled={disabled || state.style_enabled.text !== 'true'}
+              onEdit={(text) => { props.edit('style', text) }}
+              onReset={() => { props.resetField('style') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-moderation"
+              label={t('fieldModeration')}
+              hint={t('fieldModerationHelp')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.moderation}
+              {...fieldProps}
+              {...state.moderation}
+              onEdit={(text) => { props.edit('moderation', text) }}
+              onReset={() => { props.resetField('moderation') }}
+            />
+            <BooleanField
+              id="dsh-imagegen-settings-watermark-enable"
+              label={t('fieldWatermarkEnable')}
+              hint={t('fieldWatermarkEnableHelp')}
+              inheritLabel={t('inherit')}
+              onLabel={t('on')}
+              offLabel={t('off')}
+              {...fieldProps}
+              {...state.watermark_enabled}
+              onEdit={(text) => { props.edit('watermark_enabled', text) }}
+              onReset={() => { props.resetField('watermark_enabled') }}
+            />
+            <ValueField
+              id="dsh-imagegen-settings-watermark"
+              label={t('fieldWatermark')}
+              hint={state.watermark_enabled.text === 'true' ? t('fieldWatermarkHelp') : t('fieldGatedHint')}
+              placeholder={t('fieldOptionalPlaceholder')}
+              comboOptions={ENUM_OPTIONS.watermark}
+              {...fieldProps}
+              {...state.watermark}
+              disabled={disabled || state.watermark_enabled.text !== 'true'}
+              onEdit={(text) => { props.edit('watermark', text) }}
+              onReset={() => { props.resetField('watermark') }}
             />
             <ValueField
               id="dsh-imagegen-settings-count"
@@ -307,13 +476,21 @@ interface FieldProps {
   invalidLabel: string
   /** Disables every control (read-only document, or an unavailable namespace). */
   disabled: boolean
+  /** aria-label of the combo toggle button. */
+  comboAriaLabel?: string
+  /** Copy for the combo panel's empty-suggestion row. */
+  comboEmptyLabel?: string
   /** Stage draft text. */
   onEdit: (text: string) => void
   /** Stage a clear so the field re-inherits the composition layer. */
   onReset: () => void
 }
 
-/** A staged value field; `secret` renders a password control. */
+/** A staged value field; `secret` renders a password control and
+ *  `comboOptions` renders a self-drawn editable combo (input + option panel
+ *  styled as part of the card — the native datalist popup looked detached
+ *  from the card). Suggestions are hints only: any typed value is kept,
+ *  the panel filters by substring, and the current draft is marked. */
 function ValueField(props: FieldProps & {
   /** Render a password control. */
   secret?: boolean
@@ -325,7 +502,115 @@ function ValueField(props: FieldProps & {
   onClear?: () => void
   /** Whether a stored secret exists (enables the clear control). */
   canClear?: boolean
+  /** Suggestion values for the editable combo. */
+  comboOptions?: string[]
 }) {
+  const [open, setOpen] = useState(false)
+  const [focusIndex, setFocusIndex] = useState(0)
+  const comboRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside pointer-down or Escape while the panel is open.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && comboRef.current?.contains(event.target) === false) {
+        setOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const needle = props.text.trim().toLowerCase()
+  const matches = props.comboOptions !== undefined
+    ? props.comboOptions.filter(option => option.toLowerCase().includes(needle))
+    : []
+  // Reset the arrow-key position when typing narrows the suggestions.
+  useEffect(() => { setFocusIndex(0) }, [needle])
+
+  const combo = props.comboOptions !== undefined
+    ? (
+      <div className={css.combo} ref={comboRef}>
+        <input
+          id={props.id}
+          className={props.invalid ? css.comboInputInvalid : css.comboInput}
+          type="text"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={`${props.id}-options`}
+          aria-activedescendant={open && matches[focusIndex] !== undefined
+            ? `${props.id}-option-${focusIndex}`
+            : undefined}
+          {...props.invalid ? { 'aria-invalid': true } : {}}
+          value={props.text}
+          placeholder={props.placeholder ?? ''}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.value) }}
+          onClick={() => { if (!props.disabled && !open) setOpen(true) }}
+          onFocus={() => { if (!props.disabled && props.text.trim() !== '') setOpen(true) }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              setOpen(true)
+              setFocusIndex(Math.min(focusIndex + 1, Math.max(matches.length - 1, 0)))
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              setOpen(true)
+              setFocusIndex(Math.max(focusIndex - 1, 0))
+            } else if (event.key === 'Enter' && open && matches[focusIndex] !== undefined) {
+              event.preventDefault()
+              props.onEdit(matches[focusIndex])
+              setOpen(false)
+            }
+          }}
+        />
+        <button
+          type="button"
+          className={css.comboToggle}
+          aria-label={props.comboAriaLabel}
+          aria-expanded={open}
+          disabled={props.disabled}
+          onClick={() => { setOpen(!open) }}
+        >
+          ▾
+        </button>
+        {open
+          ? (
+            <div className={css.comboPanel} id={`${props.id}-options`} role="listbox">
+              {matches.length === 0
+                ? <div className={css.comboEmpty}>{props.comboEmptyLabel}</div>
+                : matches.map((option, index) => (
+                  <button
+                    type="button"
+                    id={`${props.id}-option-${index}`}
+                    key={option}
+                    role="option"
+                    aria-selected={option === props.text.trim()}
+                    className={option === props.text.trim()
+                      ? `${css.comboOption} ${css.comboOptionSelected}`
+                      : css.comboOption}
+                    onMouseEnter={() => { setFocusIndex(index) }}
+                    onMouseDown={(event) => { event.preventDefault() }}
+                    onClick={() => { props.onEdit(option); setOpen(false) }}
+                  >
+                    {option}
+                  </button>
+                ))}
+            </div>
+          )
+          : null}
+      </div>
+    )
+    : null
+
   return (
     <div className={css.field}>
       <div className={css.head}>
@@ -358,17 +643,19 @@ function ValueField(props: FieldProps & {
           )
           : null}
       </div>
-      <input
-        id={props.id}
-        className={props.invalid ? css.inputInvalid : css.input}
-        type={props.secret === true ? 'password' : 'text'}
-        autoComplete={props.secret === true ? 'off' : undefined}
-        {...props.invalid ? { 'aria-invalid': true } : {}}
-        value={props.text}
-        placeholder={props.placeholder ?? ''}
-        disabled={props.disabled}
-        onChange={(event) => { props.onEdit(event.target.value) }}
-      />
+      {combo ?? (
+        <input
+          id={props.id}
+          className={props.invalid ? css.inputInvalid : css.input}
+          type={props.secret === true ? 'password' : 'text'}
+          autoComplete={props.secret === true ? 'off' : undefined}
+          {...props.invalid ? { 'aria-invalid': true } : {}}
+          value={props.text}
+          placeholder={props.placeholder ?? ''}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.value) }}
+        />
+      )}
       <p className={props.invalid ? css.invalid : css.hint}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>
