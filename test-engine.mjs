@@ -98,46 +98,63 @@ try {
   const formEmpty = lastRequest.body
   check('multipart omits optional params when empty', formEmpty.get('style') === null && formEmpty.get('quality') === null)
 
-  // --- switch-gated optional parameters (output_format/style/watermark) -------
-  // The reference gateway rejects these three, so while their enable switch is
-  // off the resolved value is forced '' — never forwarded, even if the model
-  // passes one (stale schema) or a setting is stored. enable switches ON restores
+  // --- switch-gated optional parameters (all six behind enable switches) ------
+  // The settings card's "check to use this parameter" interaction: while a
+  // switch is off the resolved value is forced '' — never forwarded, even if
+  // the model passes one (stale schema) or a setting is stored. ON restores
   // the model-first merge.
 
   {
     const cfg = {
       quality: 'medium', output_format: 'webp', background: 'auto', style: 'natural', moderation: 'high', watermark: 'none',
-      output_format_enabled: false, style_enabled: false, watermark_enabled: false,
+      quality_enabled: false, output_format_enabled: false, background_enabled: false,
+      style_enabled: false, moderation_enabled: false, watermark_enabled: false,
     }
     const p = resolveOptionalParams(cfg, {})
-    check('disabled switches force the gated params empty (settings stored but off)',
-      p.quality === 'medium' && p.background === 'auto' && p.moderation === 'high'
-      && p.output_format === '' && p.style === '' && p.watermark === '')
-    const p2 = resolveOptionalParams(cfg, { output_format: 'jpeg', style: 'vivid', watermark: 'triw' })
-    check('disabled switches drop gated params even when the model passes them',
-      p2.output_format === '' && p2.style === '' && p2.watermark === '')
+    check('all switches off -> every optional param forced empty (settings stored but off)',
+      p.quality === '' && p.output_format === '' && p.background === '' && p.style === '' && p.moderation === '' && p.watermark === '')
+    const p2 = resolveOptionalParams(cfg, {
+      quality: 'high', output_format: 'jpeg', background: 'opaque', style: 'vivid', moderation: 'low', watermark: 'triw',
+    })
+    check('all switches off -> model-passed optionals are dropped too',
+      p2.quality === '' && p2.output_format === '' && p2.background === '' && p2.style === '' && p2.moderation === '' && p2.watermark === '')
   }
 
   {
     const cfg = {
       quality: 'medium', output_format: 'webp', background: 'auto', style: 'natural', moderation: 'high', watermark: 'none',
-      output_format_enabled: true, style_enabled: true, watermark_enabled: true,
+      quality_enabled: true, output_format_enabled: false, background_enabled: false,
+      style_enabled: false, moderation_enabled: false, watermark_enabled: false,
     }
-    const p = resolveOptionalParams(cfg, { output_format: 'jpeg', style: 'vivid', watermark: 'triw' })
-    check('enabled switches: model arg wins over the setting',
-      p.output_format === 'jpeg' && p.style === 'vivid' && p.watermark === 'triw')
+    const p = resolveOptionalParams(cfg, {})
+    check('only quality enabled -> only quality resolves, the rest stay empty',
+      p.quality === 'medium' && p.output_format === '' && p.background === '' && p.style === '' && p.moderation === '' && p.watermark === '')
+  }
+
+  {
+    const cfg = {
+      quality: 'medium', output_format: 'webp', background: 'auto', style: 'natural', moderation: 'high', watermark: 'none',
+      quality_enabled: true, output_format_enabled: true, background_enabled: true,
+      style_enabled: true, moderation_enabled: true, watermark_enabled: true,
+    }
+    const p = resolveOptionalParams(cfg, {
+      quality: 'high', output_format: 'jpeg', background: 'opaque', style: 'vivid', moderation: 'low', watermark: 'triw',
+    })
+    check('all switches on -> model arg wins over the setting',
+      p.quality === 'high' && p.output_format === 'jpeg' && p.background === 'opaque' && p.style === 'vivid' && p.moderation === 'low' && p.watermark === 'triw')
     const p2 = resolveOptionalParams(cfg, {})
-    check('enabled switches: empty model arg falls back to the setting',
-      p2.output_format === 'webp' && p2.style === 'natural' && p2.watermark === 'none')
+    check('all switches on -> empty model arg falls back to the setting',
+      p2.quality === 'medium' && p2.output_format === 'webp' && p2.background === 'auto' && p2.style === 'natural' && p2.moderation === 'high' && p2.watermark === 'none')
     const p3 = resolveOptionalParams(cfg, { output_format: '  ' })
-    check('enabled switches: whitespace model arg counts as empty (setting used)',
+    check('all switches on -> whitespace model arg counts as empty (setting used)',
       p3.output_format === 'webp')
   }
 
   {
     const cfg = {
       quality: '', output_format: '', background: '', style: '', moderation: '', watermark: '',
-      output_format_enabled: true, style_enabled: true, watermark_enabled: true,
+      quality_enabled: true, output_format_enabled: true, background_enabled: true,
+      style_enabled: true, moderation_enabled: true, watermark_enabled: true,
     }
     const p = resolveOptionalParams(cfg, {})
     check('everything empty stays empty (empty string -> upstream default)',

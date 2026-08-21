@@ -29,10 +29,14 @@ export interface ImageGenSettings {
   style?: string
   moderation?: string
   watermark?: string
-  /** Enable switches for the params the default gateway rejects (off by default:
-   *  while off, the field is locked and the value is neither sent nor advertised). */
+  /** Enable switches for all six optional params ("check to use this
+   *  parameter"; off by default — the field is locked and the value is
+   *  neither sent upstream nor advertised to the model). */
+  quality_enabled?: boolean
   output_format_enabled?: boolean
+  background_enabled?: boolean
   style_enabled?: boolean
+  moderation_enabled?: boolean
   watermark_enabled?: boolean
 }
 
@@ -64,11 +68,12 @@ export interface ImageGenSettingsCardState extends CardShell {
   moderation: CardFieldState
   /** Optional watermark (triw/none/auto). */
   watermark: CardFieldState
-  /** Enable switch for the output_format parameter. */
+  /** Enable switches for the six optional parameters. */
+  quality_enabled: CardFieldState
   output_format_enabled: CardFieldState
-  /** Enable switch for the style parameter. */
+  background_enabled: CardFieldState
   style_enabled: CardFieldState
-  /** Enable switch for the watermark parameter. */
+  moderation_enabled: CardFieldState
   watermark_enabled: CardFieldState
 }
 
@@ -118,8 +123,11 @@ export class ImageGenSettingsCardController {
       textField('style'),
       textField('moderation'),
       textField('watermark'),
+      booleanField('quality_enabled'),
       booleanField('output_format_enabled'),
+      booleanField('background_enabled'),
       booleanField('style_enabled'),
+      booleanField('moderation_enabled'),
       booleanField('watermark_enabled'),
     ], {
       // The redacted wire view never returns the key; a save's outcome is
@@ -144,8 +152,11 @@ export class ImageGenSettingsCardController {
       style: this.form.field('style'),
       moderation: this.form.field('moderation'),
       watermark: this.form.field('watermark'),
+      quality_enabled: this.form.field('quality_enabled'),
       output_format_enabled: this.form.field('output_format_enabled'),
+      background_enabled: this.form.field('background_enabled'),
       style_enabled: this.form.field('style_enabled'),
+      moderation_enabled: this.form.field('moderation_enabled'),
       watermark_enabled: this.form.field('watermark_enabled'),
     }
   }
@@ -291,25 +302,16 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
             <ValueField
               id="dsh-imagegen-settings-quality"
               label={t('fieldQuality')}
-              hint={t('fieldQualityHelp')}
+              hint={state.quality_enabled.text === 'true' ? t('fieldQualityHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.quality}
+              checked={state.quality_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('quality_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.quality}
+              disabled={disabled || state.quality_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('quality', text) }}
               onReset={() => { props.resetField('quality') }}
-            />
-            <BooleanField
-              id="dsh-imagegen-settings-output-format-enable"
-              label={t('fieldOutputFormatEnable')}
-              hint={t('fieldOutputFormatEnableHelp')}
-              inheritLabel={t('inherit')}
-              onLabel={t('on')}
-              offLabel={t('off')}
-              {...fieldProps}
-              {...state.output_format_enabled}
-              onEdit={(text) => { props.edit('output_format_enabled', text) }}
-              onReset={() => { props.resetField('output_format_enabled') }}
             />
             <ValueField
               id="dsh-imagegen-settings-output-format"
@@ -317,6 +319,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               hint={state.output_format_enabled.text === 'true' ? t('fieldOutputFormatHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.output_format}
+              checked={state.output_format_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('output_format_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.output_format}
               disabled={disabled || state.output_format_enabled.text !== 'true'}
@@ -326,25 +330,16 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
             <ValueField
               id="dsh-imagegen-settings-background"
               label={t('fieldBackground')}
-              hint={t('fieldBackgroundHelp')}
+              hint={state.background_enabled.text === 'true' ? t('fieldBackgroundHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.background}
+              checked={state.background_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('background_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.background}
+              disabled={disabled || state.background_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('background', text) }}
               onReset={() => { props.resetField('background') }}
-            />
-            <BooleanField
-              id="dsh-imagegen-settings-style-enable"
-              label={t('fieldStyleEnable')}
-              hint={t('fieldStyleEnableHelp')}
-              inheritLabel={t('inherit')}
-              onLabel={t('on')}
-              offLabel={t('off')}
-              {...fieldProps}
-              {...state.style_enabled}
-              onEdit={(text) => { props.edit('style_enabled', text) }}
-              onReset={() => { props.resetField('style_enabled') }}
             />
             <ValueField
               id="dsh-imagegen-settings-style"
@@ -352,6 +347,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               hint={state.style_enabled.text === 'true' ? t('fieldStyleHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.style}
+              checked={state.style_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('style_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.style}
               disabled={disabled || state.style_enabled.text !== 'true'}
@@ -361,25 +358,16 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
             <ValueField
               id="dsh-imagegen-settings-moderation"
               label={t('fieldModeration')}
-              hint={t('fieldModerationHelp')}
+              hint={state.moderation_enabled.text === 'true' ? t('fieldModerationHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.moderation}
+              checked={state.moderation_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('moderation_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.moderation}
+              disabled={disabled || state.moderation_enabled.text !== 'true'}
               onEdit={(text) => { props.edit('moderation', text) }}
               onReset={() => { props.resetField('moderation') }}
-            />
-            <BooleanField
-              id="dsh-imagegen-settings-watermark-enable"
-              label={t('fieldWatermarkEnable')}
-              hint={t('fieldWatermarkEnableHelp')}
-              inheritLabel={t('inherit')}
-              onLabel={t('on')}
-              offLabel={t('off')}
-              {...fieldProps}
-              {...state.watermark_enabled}
-              onEdit={(text) => { props.edit('watermark_enabled', text) }}
-              onReset={() => { props.resetField('watermark_enabled') }}
             />
             <ValueField
               id="dsh-imagegen-settings-watermark"
@@ -387,6 +375,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               hint={state.watermark_enabled.text === 'true' ? t('fieldWatermarkHelp') : t('fieldGatedHint')}
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.watermark}
+              checked={state.watermark_enabled.text === 'true'}
+              onChecked={(checked) => { props.edit('watermark_enabled', checked ? 'true' : 'false') }}
               {...fieldProps}
               {...state.watermark}
               disabled={disabled || state.watermark_enabled.text !== 'true'}
@@ -504,6 +494,12 @@ function ValueField(props: FieldProps & {
   canClear?: boolean
   /** Suggestion values for the editable combo. */
   comboOptions?: string[]
+  /** When present, renders a "use this parameter" checkbox before the label.
+   *  Unchecked locks the control and (host-side) drops the parameter from the
+   *  upstream request and the tool schema. */
+  checked?: boolean
+  /** Stage the enable-switch state the checkbox edits. */
+  onChecked?: (checked: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
   const [focusIndex, setFocusIndex] = useState(0)
@@ -643,19 +639,33 @@ function ValueField(props: FieldProps & {
           )
           : null}
       </div>
-      {combo ?? (
-        <input
-          id={props.id}
-          className={props.invalid ? css.inputInvalid : css.input}
-          type={props.secret === true ? 'password' : 'text'}
-          autoComplete={props.secret === true ? 'off' : undefined}
-          {...props.invalid ? { 'aria-invalid': true } : {}}
-          value={props.text}
-          placeholder={props.placeholder ?? ''}
-          disabled={props.disabled}
-          onChange={(event) => { props.onEdit(event.target.value) }}
-        />
-      )}
+      <div className={css.comboRow}>
+        {props.checked !== undefined && props.onChecked !== undefined
+          ? (
+            <input
+              type="checkbox"
+              className={css.enableCheck}
+              aria-label={props.label}
+              checked={props.checked}
+              disabled={props.disabled}
+              onChange={(event) => { props.onChecked(event.target.checked) }}
+            />
+          )
+          : null}
+        {combo ?? (
+          <input
+            id={props.id}
+            className={props.invalid ? css.inputInvalid : css.input}
+            type={props.secret === true ? 'password' : 'text'}
+            autoComplete={props.secret === true ? 'off' : undefined}
+            {...props.invalid ? { 'aria-invalid': true } : {}}
+            value={props.text}
+            placeholder={props.placeholder ?? ''}
+            disabled={props.disabled}
+            onChange={(event) => { props.onEdit(event.target.value) }}
+          />
+        )}
+      </div>
       <p className={props.invalid ? css.invalid : css.hint}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>

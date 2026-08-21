@@ -35,12 +35,6 @@ export type ImageGenLocaleKey =
   | 'fieldWatermark'
   | 'fieldWatermarkHelp'
   | 'fieldOptionalPlaceholder'
-  | 'fieldOutputFormatEnable'
-  | 'fieldOutputFormatEnableHelp'
-  | 'fieldStyleEnable'
-  | 'fieldStyleEnableHelp'
-  | 'fieldWatermarkEnable'
-  | 'fieldWatermarkEnableHelp'
   | 'fieldGatedHint'
   | 'comboAria'
   | 'comboEmpty'
@@ -139,13 +133,7 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   fieldWatermark: '水印',
   fieldWatermarkHelp: 'triw / none / auto（较新参数，部分网关不支持），留空用上游默认。',
   fieldOptionalPlaceholder: '留空用上游默认',
-  fieldOutputFormatEnable: '启用输出格式参数',
-  fieldOutputFormatEnableHelp: '默认关闭：当前网关不兼容 output_format，传了会报「图片字节与声明格式不符」。开启后模型可传、设置可编辑、会发送给上游。',
-  fieldStyleEnable: '启用风格参数',
-  fieldStyleEnableHelp: '默认关闭：当前网关不兼容 style，直接报 Unknown parameter。开启后模型可传、设置可编辑、会发送给上游。',
-  fieldWatermarkEnable: '启用水印参数',
-  fieldWatermarkEnableHelp: '默认关闭：当前网关把 watermark 当布尔值解析，不接受 triw/none/auto。开启后模型可传、设置可编辑、会发送给上游。',
-  fieldGatedHint: '默认关闭（当前网关不兼容），开启上方开关后此参数才会发送给上游并开放给模型。',
+  fieldGatedHint: '未勾选：此参数不发送给上游、模型也不可见。勾选后即可编辑使用。',
   comboAria: '选项列表',
   comboEmpty: '无匹配选项',
   save: '保存',
@@ -244,13 +232,7 @@ export const en: Record<ImageGenLocaleKey, string> = {
   fieldWatermark: 'Watermark',
   fieldWatermarkHelp: 'triw / none / auto (newer parameter, some gateways reject it); leave empty for the upstream default.',
   fieldOptionalPlaceholder: 'Upstream default if empty',
-  fieldOutputFormatEnable: 'Enable output format',
-  fieldOutputFormatEnableHelp: 'Off by default: the current gateway rejects output_format ("declared type does not match its bytes"). When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
-  fieldStyleEnable: 'Enable style',
-  fieldStyleEnableHelp: 'Off by default: the current gateway rejects style ("Unknown parameter"). When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
-  fieldWatermarkEnable: 'Enable watermark',
-  fieldWatermarkEnableHelp: 'Off by default: the current gateway parses watermark as a boolean and rejects triw/none/auto. When on, the model can pass it, the setting becomes editable, and it is sent upstream.',
-  fieldGatedHint: 'Off by default (the current gateway rejects it); flip the switch above to send it upstream and expose it to the model.',
+  fieldGatedHint: 'Unchecked: not sent upstream, invisible to the model. Check to use this parameter.',
   comboAria: 'Options',
   comboEmpty: 'No matching option',
   save: 'Save',
