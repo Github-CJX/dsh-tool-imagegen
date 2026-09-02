@@ -3,7 +3,7 @@
  *
  * Simulates the dsh client-modules loader: installs `window.__ModuleLoader__`,
  * evaluates the bundle, captures its factory, and runs it with stub externals
- * (react, react/jsx-runtime, dsh-client-runtime/client). Asserts:
+ * (react, react/jsx-runtime, dsh-client-store). Asserts:
  *   - the bundle registers id "@local/dsh-tool-imagegen" via __ModuleLoader__.load
  *   - the factory exports { apply, inject } (inject a string array)
  *   - apply() runs without throwing against a stubbed client ctx, and
@@ -46,7 +46,7 @@ function snapshotStore(initial) {
 const externals = {
   'react': { useState: () => {}, useEffect: () => {}, useCallback: () => {}, useSyncExternalStore: () => undefined, memo: (fn) => fn },
   'react/jsx-runtime': { jsx: () => {}, jsxs: () => {}, Fragment: Symbol('Fragment'), jsxDEV: () => {} },
-  '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore: snapshotStore },
+  '@deepseek-ai/dsh-client-store': { createSnapshotStore: snapshotStore },
   // Only imported at component-render time (never rendered in the smoke run);
   // the specifiers must simply resolve.
   '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null },

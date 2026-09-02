@@ -13,7 +13,7 @@ import {
   type SettingsScope,
   type SettingsScopeSnapshot,
   type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-client-store'
 import { SETTINGS_API } from './protocol.ts'
 
 /** The fields this plugin's settings card edits. */
