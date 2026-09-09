@@ -1,73 +1,65 @@
 /**
- * dsh-tool-imagegen inline conversation view. Mirrors the platform tool-row
- * chrome so generated images read as a sibling of the bash/read/search rows,
- * riding the dsh --dsw-* tokens.
+ * dsh-tool-imagegen inline conversation view. Settled generated images render
+ * as natural inline message images (rounded, no surrounding tool-card chrome)
+ * with a hover action cluster (view / edit / download / open / details) and an
+ * expandable details panel showing the full prompt + model + size. Running and
+ * error states render as slim unboxed rows so the whole view reads as part of
+ * the conversation flow rather than a framed tool card.
  */
 
 .root {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-3);
-  overflow: hidden;
+  gap: 10px;
+  min-width: 0;
 }
 
-.head {
+/* Slim, unboxed status rows (running / error / text-only outcomes). */
+.statusRow {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
   min-width: 0;
-  height: 40px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.title {
   color: var(--dsw-alias-label-secondary);
-  flex: none;
   font-size: 13px;
-  font-weight: 600;
-  line-height: 24px;
+  line-height: 20px;
 }
 
-.meta {
+.statusText {
   color: var(--dsw-alias-label-tertiary);
-  flex: auto;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 24px;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
 
-.state {
+.stateError {
   color: var(--dsw-alias-state-error-primary);
-  flex: none;
-  font-size: 12px;
-  line-height: 24px;
 }
 
+/* Multi-image body keeps a small gap between rows. */
 .body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px;
+  gap: 12px;
+  min-width: 0;
 }
 
 .image {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
 }
 
+/* The image itself: rounded like a chat message image (hairline only). */
 .frame {
   position: relative;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2);
+  max-width: 100%;
   overflow: hidden;
 }
 
@@ -78,14 +70,16 @@
   margin: 0 auto;
 }
 
-/* Action cluster (view / download / open) over the image corner, revealed on
-   hover or focus like the platform's own image overlays. */
+/* Hover action cluster over the image corner (view / edit / download / open
+   locally / details), revealed on hover or focus. */
 .actions {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 8px;
+  bottom: 8px;
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -116,6 +110,75 @@
 .action:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Details panel: full prompt + model + size, opened by the 详情 action. */
+.details {
+  align-self: stretch;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+}
+
+.detailRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.detailLabel {
+  color: var(--dsw-alias-label-tertiary);
+  flex: none;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.detailValue {
+  color: var(--dsw-alias-label-primary);
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.detailPrompt {
+  color: var(--dsw-alias-label-secondary);
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* One-line statuses under the image (edit staged / action failures). */
+.caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.captionLine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.actionError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.editReady {
+  color: var(--dsw-alias-state-success-primary);
 }
 
 /* Fullscreen image viewer overlay. */
@@ -155,47 +218,7 @@
   background: rgb(0 0 0 / 65%);
 }
 
-.caption {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.captionLine {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.captionPrompt {
-  color: var(--dsw-alias-label-secondary);
-}
-
-.actionError {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.editReady {
-  color: var(--dsw-alias-state-success-primary);
-}
-
-/* --- running / loading / error states ---------------------------------------- */
-
-.running {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 10px 14px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 20px;
-}
+/* --- running / loading / error placeholders -------------------------------- */
 
 .spinner {
   flex: none;

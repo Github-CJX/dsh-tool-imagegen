@@ -9,9 +9,20 @@
  * view is the ONLY place the pictures surface: it resolves each durable
  * attachment to a browser URL through the conversation service and renders
  * `<img>` inline.
+ *
+ * Settled images render as natural inline message images (rounded, no
+ * surrounding tool-card chrome). A hover action cluster offers 全屏查看 /
+ * 修改 / 下载 / 本地打开 / 详情; the 详情 action opens a panel with the full
+ * prompt, model, and size. Running and error states are slim unboxed rows.
+ *
+ * The current DSH chat (default "compact" transcript view) folds a closed
+ * turn's tool calls into a process disclosure that starts collapsed, hiding
+ * the image until the user expands it — this view auto-opens that disclosure
+ * so the image is always visible without extra interaction (see the observer
+ * in {@link GenerateImageView}).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
@@ -116,6 +127,8 @@ function promptFromArgs(block: unknown): string | undefined {
  */
 export function GenerateImageView(props: GenerateImageViewProps) {
   const { t, block } = props
+  // The card's own DOM node, used to reach the transcript's process disclosure.
+  const rootRef = useRef<HTMLDivElement>(null)
   // Running calls carry no content; settled results carry the render() output
   // (either directly or under `result`). Anything unexpected renders the
   // running card — never throws, so the keyed entry cannot abdicate.
@@ -127,23 +140,51 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   const [viewing, setViewing] = useState<{ url: string; name: string } | undefined>(undefined)
 
   const runningPrompt = settled ? undefined : promptFromArgs(block)
-  const captionMeta = (image: GeneratedImageBlock): string => {
-    const parts: string[] = []
-    if (typeof image.model === 'string' && image.model !== '') parts.push(image.model)
-    if (typeof image.size === 'string' && image.size !== '') parts.push(image.size)
-    return parts.join(' · ')
-  }
+
+  // The current DSH chat (default "compact" transcript view) folds a closed
+  // turn's tool calls into a process disclosure that starts collapsed, hiding
+  // the generated image until the user expands it. Whenever this card ends up
+  // inside such a collapsed disclosure, open that disclosure so the image is
+  // visible without extra interaction. No-op in normal mode (nothing is
+  // hidden) and harmless if the DOM markers ever change (the user can still
+  // expand manually). The fold can appear at any time after mount (it applies
+  // once the turn closes), so a persistent MutationObserver keeps watching the
+  // hidden marker. Idempotent: once open the marker disappears.
+  useEffect(() => {
+    const el = rootRef.current
+    if (el === null) return
+    const tryOpen = () => {
+      try {
+        const hiddenItem = el.closest('[data-turn-process-hidden]')
+        if (hiddenItem === null) return
+        const turn = hiddenItem.getAttribute('data-chat-turn')
+        const scope = hiddenItem.parentElement
+        if (turn === null || turn === '' || scope === null) return
+        const disclosure = scope.querySelector<HTMLButtonElement>(
+          `[data-chat-flow-kind="turn-process"][data-chat-turn="${CSS.escape(turn)}"] [data-turn-process]`,
+        )
+        if (disclosure === null || disclosure.getAttribute('aria-expanded') === 'true') return
+        disclosure.click()
+      } catch {
+        // The disclosure DOM markers are platform internals; never let the
+        // auto-expand attempt break the renderer.
+      }
+    }
+    const observer = new MutationObserver(() => { tryOpen() })
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-turn-process-hidden'], subtree: true })
+    tryOpen()
+    return () => observer.disconnect()
+  }, [])
 
   if (!settled) {
     return (
-      <div className={css.root}>
-        <div className={css.head}>
-          <span className={css.title}>{t('toolviewTitle')}</span>
-          <span className={css.meta}>{runningPrompt ?? ''}</span>
-        </div>
-        <div className={css.running} role="status">
+      <div className={css.root} ref={rootRef}>
+        <div className={css.statusRow} role="status">
           <span className={css.spinner} aria-hidden />
-          {t('toolviewRunning')}
+          <span>{t('toolviewRunning')}</span>
+          {runningPrompt !== undefined
+            ? <span className={css.statusText}>{runningPrompt}</span>
+            : null}
         </div>
       </div>
     )
@@ -155,32 +196,17 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   if (images.length === 0) {
     const envelope = textBlocks(content).join('\n')
     return (
-      <div className={css.root}>
-        <div className={css.head}>
-          <span className={css.title}>{t('toolviewTitle')}</span>
-          {isError ? <span className={css.state}>{t('toolviewFailed')}</span> : null}
+      <div className={css.root} ref={rootRef}>
+        <div className={css.statusRow}>
+          {isError ? <span className={css.stateError}>{t('toolviewFailed')}</span> : null}
+          {envelope !== '' ? <span className={css.statusText}>{envelope}</span> : null}
         </div>
-        {envelope !== ''
-          ? (
-            <div className={css.running}>
-              <span className={css.captionPrompt}>{envelope}</span>
-            </div>
-          )
-          : null}
       </div>
     )
   }
 
   return (
-    <div className={css.root}>
-      <div className={css.head}>
-        <span className={css.title}>{t('toolviewTitle')}</span>
-        <span className={css.meta}>
-          {images.length > 1 ? `${images.length} · ` : ''}
-          {captionMeta(images[0])}
-        </span>
-        {isError ? <span className={css.state}>{t('toolviewFailed')}</span> : null}
-      </div>
+    <div className={css.root} ref={rootRef}>
       <div className={css.body}>
         {images.map((image, index) => (
           <ImageRow
@@ -240,7 +266,7 @@ function fileNameOf(image: GeneratedImageBlock, index: number): string {
   return `generated-${index + 1}.${extension}`
 }
 
-/** One generated image: resolve its URL, then render the frame + caption. */
+/** One generated image: resolve its URL, then render the frame + details. */
 function ImageRow(props: {
   image: GeneratedImageBlock
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
@@ -259,14 +285,15 @@ function ImageRow(props: {
   // Edit staging: idle → staging → staged (composer chip appears) or failed.
   const [editState, setEditState] = useState<'idle' | 'staging' | 'staged' | 'failed'>('idle')
   const [editError, setEditError] = useState<string | undefined>(undefined)
+  // Details panel: full prompt + model + size (opened by the 详情 action).
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   useEffect(() => {
     let alive = true
     loadImage(image.attachment)
       .then((resolved) => { if (alive) setUrl(resolved) })
       .catch((error: unknown) => {
-        if (!alive) return
-        setFailed(error instanceof Error ? error.message : String(error))
+        if (alive) setFailed(error instanceof Error ? error.message : String(error))
       })
     return () => { alive = false }
   }, [loadImage, image.attachment])
@@ -294,13 +321,6 @@ function ImageRow(props: {
         setEditError(error instanceof Error ? error.message : String(error))
       })
   }
-
-  const meta = (() => {
-    const parts: string[] = []
-    if (typeof image.model === 'string' && image.model !== '') parts.push(`${image.model}`)
-    if (typeof image.size === 'string' && image.size !== '') parts.push(image.size)
-    return parts.join(' · ')
-  })()
 
   const name = fileNameOf(image, index)
 
@@ -351,6 +371,15 @@ function ImageRow(props: {
                 >
                   {openState === 'opening' ? t('toolviewOpening') : t('toolviewOpen')}
                 </button>
+                <button
+                  type="button"
+                  className={css.action}
+                  onClick={() => setDetailsOpen(!detailsOpen)}
+                  aria-expanded={detailsOpen}
+                  title={t('toolviewDetails')}
+                >
+                  {t('toolviewDetails')}
+                </button>
               </div>
             </>
           )
@@ -358,9 +387,37 @@ function ImageRow(props: {
             ? <div className={css.loadFailed} role="status">{failed}</div>
             : <div className={css.loading}>{/* CSS-only spinner-less placeholder */}</div>}
       </div>
+      {detailsOpen
+        ? (
+          <div className={css.details}>
+            {typeof image.prompt === 'string' && image.prompt !== ''
+              ? (
+                <div className={css.detailRow}>
+                  <span className={css.detailLabel}>{t('toolviewPrompt')}</span>
+                  <span className={`${css.detailValue} ${css.detailPrompt}`}>{image.prompt}</span>
+                </div>
+              )
+              : null}
+            {typeof image.model === 'string' && image.model !== ''
+              ? (
+                <div className={css.detailRow}>
+                  <span className={css.detailLabel}>{t('toolviewModel')}</span>
+                  <span className={css.detailValue}>{image.model}</span>
+                </div>
+              )
+              : null}
+            {typeof image.size === 'string' && image.size !== ''
+              ? (
+                <div className={css.detailRow}>
+                  <span className={css.detailLabel}>{t('toolviewSize')}</span>
+                  <span className={css.detailValue}>{image.size}</span>
+                </div>
+              )
+              : null}
+          </div>
+        )
+        : null}
       <div className={css.caption}>
-        {meta !== '' ? <p className={css.captionLine}>{meta}</p> : null}
-        {image.prompt !== '' ? <p className={`${css.captionLine} ${css.captionPrompt}`}>{image.prompt}</p> : null}
         {editState === 'staged'
           ? <p className={`${css.captionLine} ${css.editReady}`}>{t('toolviewEditReady')}</p>
           : null}

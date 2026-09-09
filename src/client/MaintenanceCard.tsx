@@ -53,6 +53,17 @@ export interface StorageSectionProps extends MaintenanceCardFace {
  * Memoized: its only props (`t`, `fetchFn`) are stable, so the per-keystroke
  * settings-card re-render skips this section entirely.
  */
+/** Module-level stats cache: the storage section remounts whenever the card
+ *  body opens; show the last inventory immediately instead of re-fetching
+ *  (the host route also caches, but this avoids even the round-trip). */
+interface StatsCacheValue {
+  at: number
+  uploads: AreaStats
+  attachments: AreaStats
+}
+let statsCache: StatsCacheValue | undefined
+const STATS_TTL_MS = 10000
+
 export const StorageSection = memo(function StorageSection({ t, fetchFn }: StorageSectionProps) {
   const [uploads, setUploads] = useState<AreaStats | undefined>(undefined)
   const [attachments, setAttachments] = useState<AreaStats | undefined>(undefined)
@@ -60,7 +71,14 @@ export const StorageSection = memo(function StorageSection({ t, fetchFn }: Stora
   const [report, setReport] = useState<string | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
+    // Serve the cached inventory when still fresh (no network round-trip).
+    if (statsCache !== undefined && Date.now() - statsCache.at < STATS_TTL_MS) {
+      setUploads(statsCache.uploads)
+      setAttachments(statsCache.attachments)
+      setError(undefined)
+      return
+    }
     try {
       const response = await fetchFn(MAINTENANCE_API.stats, {
         method: 'POST',
@@ -74,6 +92,9 @@ export const StorageSection = memo(function StorageSection({ t, fetchFn }: Stora
         message?: string
       }
       if (body.ok !== true) throw new Error(body.message ?? 'maintenance unavailable')
+      if (body.uploads !== undefined && body.attachments !== undefined) {
+        statsCache = { at: Date.now(), uploads: body.uploads, attachments: body.attachments }
+      }
       setUploads(body.uploads)
       setAttachments(body.attachments)
       setError(undefined)
@@ -104,6 +125,8 @@ export const StorageSection = memo(function StorageSection({ t, fetchFn }: Stora
         message?: string
       }
       if (body.ok !== true) throw new Error(body.message ?? 'cleanup failed')
+      // The corpus changed: drop the cached inventory so the refresh refetches.
+      statsCache = undefined
       const total = (body.uploads?.bytesFreed ?? 0) + (body.attachments?.bytesFreed ?? 0)
       setReport(t('storageCleanupDone', {
         uploads: body.uploads?.removed ?? 0,

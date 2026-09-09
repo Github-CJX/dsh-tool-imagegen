@@ -11,11 +11,18 @@
  * authorizes `image` blocks). The model-facing envelope text (prefixed with
  * UPLOAD_ENVELOPE_PREFIX) is filtered out of the bubble; the user sees the
  * picture and their own words.
+ *
+ * IMPORTANT: reference images are drawn with plain `<img>` elements resolved
+ * through the load face — NOT through the attachment package's ImageGallery.
+ * ImageGallery is an internal component of @deepseek-ai/dsh-client-ui-attachment
+ * whose client module exports only { apply, inject }; importing it yields
+ * `undefined` at runtime, which made this renderer crash with React error #130
+ * on its very first message (the entry then abdicated and every user bubble
+ * fell back to the shipped renderer, exposing the raw model-facing envelope).
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
 import {
   IconCheckOutline16,
   IconCopyOutline16,
@@ -151,6 +158,78 @@ function isUploadedImageBlock(block: ContentBlock): block is UploadedImageBlock 
   return block !== null && typeof block === 'object' && 'type' in block && block.type === 'uploaded-image' && block.attachment !== undefined
 }
 
+/** A usable display name for one attachment (ref name or fallback). */
+function attachmentName(attachment: ImageAttachmentRef): string {
+  if (typeof attachment.name === 'string' && attachment.name !== '') return attachment.name
+  return typeof attachment.mediaType === 'string' && attachment.mediaType === 'image/gif' ? 'image.gif' : 'image.png'
+}
+
+/** Resolve one attachment and render it as an `<img>` (self-drawn gallery). */
+function BubbleImage(props: {
+  attachment: ImageAttachmentRef
+  load: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Single images render large; several render as square tiles. */
+  tile: boolean
+  onView: (url: string, name: string) => void
+  t: Translate
+}) {
+  const { attachment, load, tile, onView, t } = props
+  const [url, setUrl] = useState<string | undefined>(undefined)
+  const [failed, setFailed] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    let alive = true
+    load(attachment)
+      .then((resolved) => { if (alive) setUrl(resolved) })
+      .catch((error: unknown) => {
+        if (alive) setFailed(error instanceof Error ? error.message : String(error))
+      })
+    return () => { alive = false }
+  }, [load, attachment])
+
+  if (url !== undefined) {
+    const name = attachmentName(attachment)
+    return (
+      <button
+        type="button"
+        className={tile ? css.thumb : css.hero}
+        title={name}
+        aria-label={t('image.label')}
+        onClick={() => onView(url, name)}
+      >
+        <img className={css.img} src={url} alt={name} loading="lazy" />
+      </button>
+    )
+  }
+  if (failed !== undefined) {
+    return <span className={css.stateLine} role="status">{t('image.loadFailed')}</span>
+  }
+  return <span className={css.stateLine}>{t('image.loading')}</span>
+}
+
+/** Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes. */
+function BubbleLightbox(props: { url: string; name: string; closeLabel: string; onClose: () => void }) {
+  const { url, name, closeLabel, onClose } = props
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className={css.lightbox} role="dialog" aria-label={name} onClick={onClose}>
+      <button type="button" className={css.lightboxClose} aria-label={closeLabel} onClick={onClose}>✕</button>
+      <img
+        className={css.lightboxImg}
+        src={url}
+        alt={name}
+        onClick={(event) => event.stopPropagation()}
+      />
+    </div>
+  )
+}
+
 /**
  * Render one user message: images (platform `image` + plugin `uploaded-image`)
  * above the text bubble, then the hover actions column.
@@ -170,13 +249,14 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
     : undefined
   const content = Array.isArray(message?.content) ? message.content as ContentBlock[] : []
   const time = message?.time
+  // The fullscreen overlay holds one image at a time (url + display name).
+  const [viewing, setViewing] = useState<{ url: string; name: string } | undefined>(undefined)
 
   // Classify: envelope text is model-facing only (filtered out of the bubble);
   // platform images go through the native loader; plugin uploads go through
   // the plugin's attachment bridge; everything else lands in JsonBlock.
   const texts: string[] = []
-  const platformImages: ImageAttachmentRef[] = []
-  const uploadedImages: UploadedImageBlock[] = []
+  const images: ImageAttachmentRef[] = []
   const rest: ContentBlock[] = []
   for (const block of content) {
     if (isTextBlock(block)) {
@@ -191,11 +271,11 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
       continue
     }
     if (isImageBlock(block)) {
-      platformImages.push(block.attachment)
+      images.push(block.attachment)
       continue
     }
     if (isUploadedImageBlock(block)) {
-      uploadedImages.push(block)
+      images.push(block.attachment)
       continue
     }
     rest.push(block)
@@ -203,43 +283,46 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
   const text = texts.join('')
   const showBubble = text !== '' || rest.length > 0
 
-  const items = useMemo(
-    () => [...platformImages, ...uploadedImages.map(block => block.attachment)].map(attachment => ({ attachment })),
-    [platformImages, uploadedImages],
-  )
-  const pluginIds = useMemo(
-    () => new Set(uploadedImages.map(block => String(block.attachment.attachmentId))),
-    [uploadedImages],
+  const imageIds = useMemo(
+    () => new Set(images.map(attachment => String(attachment.attachmentId))),
+    [images],
   )
 
   // Per-attachment URL resolution: plugin uploads are deterministic bridge
   // URLs (only when a session id is actually present); everything else defers
   // to the platform loader.
   const load = useCallback((attachment: ImageAttachmentRef) => {
-    if (typeof sessionId === 'string' && sessionId !== '' && pluginIds.has(String(attachment.attachmentId))) {
+    if (typeof sessionId === 'string' && sessionId !== '' && imageIds.has(String(attachment.attachmentId))) {
       return Promise.resolve(
         `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(String(attachment.attachmentId))}`,
       )
     }
     return loadImage(attachment)
-  }, [pluginIds, sessionId, loadImage])
-
-  const labels = useMemo(() => ({
-    image: t('image.label'),
-    open: t('image.openOriginal'),
-    openNamed: (label: string) => t('image.openOriginalLabel', { label }),
-    loading: t('image.loading'),
-    loadFailed: t('image.loadFailed'),
-    lightbox: { dialog: t('image.preview'), close: t('image.closePreview') },
-  }), [t])
+  }, [imageIds, sessionId, loadImage])
 
   const clock = useMemo(() => formatClock(time, t), [time, t])
   const truncated = useCallback((total: number) => t('json.truncated', { total }), [t])
+  const tile = images.length > 1
 
   return (
     <div className={css.userRow} data-time-hover-root>
       <div className={css.userStack}>
-        <ImageGallery images={items} load={load} align="end" labels={labels} />
+        {images.length > 0
+          ? (
+            <div className={css.images}>
+              {images.map((attachment, index) => (
+                <BubbleImage
+                  key={`${String(attachment.attachmentId)}:${index}`}
+                  attachment={attachment}
+                  load={load}
+                  tile={tile}
+                  onView={(url, name) => setViewing({ url, name })}
+                  t={t}
+                />
+              ))}
+            </div>
+          )
+          : null}
         {showBubble && (
           <div className={css.bubble}>
             {projectUserText(text)}
@@ -258,6 +341,9 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
         {clock !== undefined ? <span className={css.timeStart}>{clock}</span> : null}
         <CopyAction text={text} t={t} />
       </div>
+      {viewing !== undefined
+        ? <BubbleLightbox url={viewing.url} name={viewing.name} closeLabel={t('image.closePreview')} onClose={() => setViewing(undefined)} />
+        : null}
     </div>
   )
 })
