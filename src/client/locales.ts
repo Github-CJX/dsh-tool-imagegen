@@ -75,6 +75,8 @@ export type ImageGenLocaleKey =
   | 'toolviewEditFailed'
   | 'toolviewSize'
   | 'toolviewDetails'
+  | 'toolviewPromptExpand'
+  | 'toolviewPromptCollapse'
   | 'uploadTitle'
   | 'uploadHelp'
   | 'uploading'
@@ -176,6 +178,8 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   toolviewEditFailed: '操作失败',
   toolviewSize: '尺寸',
   toolviewDetails: '详情',
+  toolviewPromptExpand: '展开提示词',
+  toolviewPromptCollapse: '收起提示词',
   uploadTitle: '上传图片',
   uploadHelp: '当前模型不支持直接传图：点击上传参考图，模型会收到图片路径，可基于它生成或修改。',
   uploading: '上传中…',
@@ -278,6 +282,8 @@ export const en: Record<ImageGenLocaleKey, string> = {
   toolviewEditFailed: 'Edit failed',
   toolviewSize: 'Size',
   toolviewDetails: 'Details',
+  toolviewPromptExpand: 'Show full prompt',
+  toolviewPromptCollapse: 'Hide prompt',
   uploadTitle: 'Upload image',
   uploadHelp: 'This model cannot take images directly: upload a reference and the model receives its path for image-to-image.',
   uploading: 'Uploading…',

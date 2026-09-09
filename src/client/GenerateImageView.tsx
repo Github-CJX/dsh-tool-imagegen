@@ -24,7 +24,7 @@
  * in {@link GenerateImageView}).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
@@ -309,6 +309,22 @@ function ImageRow(props: {
   // Edit staging: idle → staging → staged (composer chip appears) or failed.
   const [editState, setEditState] = useState<'idle' | 'staging' | 'staged' | 'failed'>('idle')
   const [editError, setEditError] = useState<string | undefined>(undefined)
+  // Prompt caption: the one-line preview is truncated by CSS; the toggle is
+  // offered only while the full prompt does not fit (and stays while open, so
+  // the user can collapse it again).
+  const promptRef = useRef<HTMLParagraphElement>(null)
+  const [promptOpen, setPromptOpen] = useState(false)
+  const [promptClipped, setPromptClipped] = useState(false)
+  useLayoutEffect(() => {
+    const el = promptRef.current
+    if (el === null) return
+    const measure = () => { setPromptClipped(el.scrollWidth > el.clientWidth + 1) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [image.prompt, promptOpen])
 
   useEffect(() => {
     let alive = true
@@ -410,7 +426,26 @@ function ImageRow(props: {
       </div>
       <div className={css.caption}>
         {meta !== '' ? <p className={css.captionLine}>{meta}</p> : null}
-        {image.prompt !== '' ? <p className={`${css.captionLine} ${css.captionPrompt}`}>{image.prompt}</p> : null}
+        {image.prompt !== ''
+          ? (
+            <div className={css.promptRow} data-expanded={promptOpen ? 'true' : undefined}>
+              <p ref={promptRef} className={`${css.captionLine} ${css.captionPrompt}`}>{image.prompt}</p>
+              {promptOpen || promptClipped
+                ? (
+                  <button
+                    type="button"
+                    className={css.promptToggle}
+                    aria-expanded={promptOpen}
+                    title={promptOpen ? t('toolviewPromptCollapse') : t('toolviewPromptExpand')}
+                    onClick={() => setPromptOpen(!promptOpen)}
+                  >
+                    {promptOpen ? t('toolviewPromptCollapse') : t('toolviewPromptExpand')}
+                  </button>
+                )
+                : null}
+            </div>
+          )
+          : null}
         {editState === 'staged'
           ? <p className={`${css.captionLine} ${css.editReady}`}>{t('toolviewEditReady')}</p>
           : null}

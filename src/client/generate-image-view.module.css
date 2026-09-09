@@ -176,6 +176,47 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Prompt caption row: the one-line preview plus the 展开提示词 / 收起提示词
+   toggle, so the full prompt stays reachable without crowding the card. */
+.promptRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.promptRow .captionPrompt {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Expanded: the same line wraps to the complete prompt. */
+.promptRow[data-expanded='true'] .captionPrompt {
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.promptToggle {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.promptToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
 .actionError {
   color: var(--dsw-alias-state-error-primary);
 }
