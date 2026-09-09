@@ -157,7 +157,7 @@ try {
   check('conversation.input.left upload button registered', upload !== undefined && upload.id === 'imagegen-upload')
   check('upload button locale is dsh-imagegen', upload?.locale === 'dsh-imagegen')
   const uploadFace = upload?.inject?.()
-  check('upload inject returns fetchFn + connection', typeof uploadFace?.fetchFn === 'function' && uploadFace?.connection?.isLoopback === true)
+  check('upload inject returns the loopback fetch face', typeof uploadFace?.fetchFn === 'function')
   check('conversation.sendSession was wrapped (instance method patched)', typeof conversationStub.sendSession === 'function' && conversationStub.calls.length === 0)
   wrappedSend = conversationStub.sendSession
   check('conversation.chat.node user shadow at priority -1', bubble !== undefined && bubble.key === 'user' && bubble.priority === -1)

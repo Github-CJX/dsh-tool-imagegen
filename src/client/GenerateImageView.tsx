@@ -63,9 +63,44 @@ function textBlocks(content: readonly ContentBlock[]): string[] {
     .map(block => block.text)
 }
 
-/** Parse the running call's argsRaw for a readable prompt (best effort). */
-function promptFromArgs(argsRaw: string): string | undefined {
-  if (argsRaw === '') return undefined
+/**
+ * Read the settled content array off a tool-call block. The transcript hands
+ * the raw lifecycle form `{ name, argsRaw, content }` for settled calls, but
+ * some surfaces deliver the nested form `{ kind, call, result: { content } }` —
+ * accept both so the view never throws on an unexpected shape (a throw would
+ * abdicate the keyed entry and fall back to the generic folded tool row).
+ */
+function settledContentOf(block: unknown): readonly ContentBlock[] | undefined {
+  if (block === null || typeof block !== 'object') return undefined
+  const candidate = block as Record<string, unknown>
+  if (Array.isArray(candidate.content)) return candidate.content as ContentBlock[]
+  if (candidate.result !== null && typeof candidate.result === 'object') {
+    const result = candidate.result as Record<string, unknown>
+    if (Array.isArray(result.content)) return result.content as ContentBlock[]
+  }
+  return undefined
+}
+
+/** Read the isError flag off either block form (false when absent). */
+function settledErrorOf(block: unknown): boolean {
+  if (block === null || typeof block !== 'object') return false
+  const candidate = block as Record<string, unknown>
+  if (candidate.isError === true) return true
+  if (candidate.result !== null && typeof candidate.result === 'object') {
+    return (candidate.result as Record<string, unknown>).isError === true
+  }
+  return false
+}
+
+/** Parse the running call's argsRaw (either block form) for a readable prompt. */
+function promptFromArgs(block: unknown): string | undefined {
+  if (block === null || typeof block !== 'object') return undefined
+  const candidate = block as Record<string, unknown>
+  let argsRaw = candidate.argsRaw
+  if (typeof argsRaw !== 'string' && candidate.call !== null && typeof candidate.call === 'object') {
+    argsRaw = (candidate.call as Record<string, unknown>).argsRaw
+  }
+  if (typeof argsRaw !== 'string' || argsRaw === '') return undefined
   try {
     const parsed = JSON.parse(argsRaw) as { prompt?: unknown }
     return typeof parsed.prompt === 'string' && parsed.prompt !== '' ? parsed.prompt : undefined
@@ -81,14 +116,17 @@ function promptFromArgs(argsRaw: string): string | undefined {
  */
 export function GenerateImageView(props: GenerateImageViewProps) {
   const { t, block } = props
-  // Running calls carry no content; settled results carry the render() output.
-  const settled = 'content' in block
-  const images = settled ? generatedImageBlocks(block.content) : []
-  const isError = settled && 'isError' in block && block.isError === true
+  // Running calls carry no content; settled results carry the render() output
+  // (either directly or under `result`). Anything unexpected renders the
+  // running card — never throws, so the keyed entry cannot abdicate.
+  const content = settledContentOf(block)
+  const settled = content !== undefined
+  const images = settled ? generatedImageBlocks(content) : []
+  const isError = settledErrorOf(block)
   // The fullscreen overlay holds one image at a time (url + display name).
   const [viewing, setViewing] = useState<{ url: string; name: string } | undefined>(undefined)
 
-  const runningPrompt = settled ? undefined : promptFromArgs(block.argsRaw)
+  const runningPrompt = settled ? undefined : promptFromArgs(block)
   const captionMeta = (image: GeneratedImageBlock): string => {
     const parts: string[] = []
     if (typeof image.model === 'string' && image.model !== '') parts.push(image.model)
@@ -115,7 +153,7 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   // keyed entry replaced the generic row, so surface the text envelope rather
   // than dropping the call.
   if (images.length === 0) {
-    const envelope = textBlocks(block.content).join('\n')
+    const envelope = textBlocks(content).join('\n')
     return (
       <div className={css.root}>
         <div className={css.head}>

@@ -179,15 +179,13 @@ export function apply(ctx: ClientContext): void {
     console.warn('[dsh-tool-imagegen] toolview registration failed:', error)
   }
 
-  // Text-model upload entry: a composer tool-row button shown only for
-  // sessions whose model cannot take images (capability-checked through the
-  // bridge; see UploadButton). Picking a file only stages a pending draft —
-  // the sendSession wrapper below submits it (with the typed text) at send
-  // time; the host then enqueues the [uploaded-image] + envelope user message
-  // — the model never sees image blocks, the user sees the picture inline.
+  // Text-model upload entry: a composer tool-row button shown unconditionally
+  // (see UploadButton). Picking a file only stages a pending draft — the
+  // sendSession wrapper below submits it (with the typed text) at send time;
+  // the host then enqueues the [uploaded-image] + envelope user message — the
+  // model never sees image blocks, the user sees the picture inline.
   const uploadFace: UploadButtonFace = {
     fetchFn: bridgeFetch,
-    connection: connection as ConnectionHandle,
   }
   try {
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({

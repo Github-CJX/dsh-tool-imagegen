@@ -1,16 +1,22 @@
 /**
- * The composer tool-row upload button for TEXT-ONLY sessions, registered into
- * `conversation.input.left` (the left end of the tool row inside the composer
- * card — a small always-visible control).
+ * The composer tool-row upload button, registered into `conversation.input.left`
+ * (the left end of the tool row inside the composer card — a small
+ * always-visible control).
  *
  * Why this exists: the platform's native composer upload is hard-rejected for
  * text-only models (apiproxy answers MODEL_DOES_NOT_SUPPORT_IMAGES for any
  * prompt whose content carries an `image` block), so this plugin offers its own
- * entry. The pick-file button is shown ONLY when the session's current model
- * cannot take images — capability is resolved host-side through the CAPABILITY
- * bridge, fed by the client's own session.models RPC (the catalog carries no
- * modality info). Image-capable sessions get no pick button: the native upload
- * works there and the model sees the picture itself.
+ * entry. The pick-file button is shown unconditionally: the same host-side
+ * pending-upload path works for text-only AND image-capable models — the bytes
+ * are stored, the model receives the work-dir path through the envelope, and
+ * the user sees the picture inline through the plugin's uploaded-image bubble.
+ *
+ * (A previous revision gated the button behind a "model is text-only"
+ * capability check fed by `connection.api.sessions.models`. That RPC no longer
+ * exists on the DSH client connection handle, so the check always threw and
+ * the button silently disappeared for every session — including text-only
+ * ones. Capability gating is dropped entirely; showing the button can never
+ * hide a working path.)
  *
  * Picking a file does NOT submit anything: the bytes are held as a per-session
  * pending draft (see pending-upload.ts). When the user types a message and
@@ -18,19 +24,16 @@
  * draft — POSTing it to the UPLOAD bridge together with the typed text, so the
  * host enqueues ONE user message ([uploaded-image] block + model-facing
  * envelope carrying the text). The picture renders inline in the conversation
- * while the text-only model only ever sees the envelope telling it the
- * work-dir path to feed back through generate_image's `image` parameter.
+ * while the model only ever sees the envelope telling it the work-dir path to
+ * feed back through generate_image's `image` parameter.
  *
  * The pending-draft "selected" chip renders for ANY session holding a draft —
- * including image-capable ones, where the pick button itself is hidden: the
- * generated-image toolview's 修改 button (stageEdit) writes the same store, so
- * edit references stay visible in the composer for both model kinds.
+ * the generated-image toolview's 修改 button (stageEdit) writes the same store,
+ * so edit references stay visible in the composer too.
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { CAPABILITY_API } from './protocol.ts'
 import {
   getPending,
   getPendingFailure,
@@ -51,8 +54,6 @@ const MAX_BYTES = 5 * 1024 * 1024
 export interface UploadButtonFace {
   /** Same-origin fetch for the loopback bridge routes. */
   fetchFn: typeof fetch
-  /** The connection handle backing the session RPC surface (api.sessions). */
-  connection: ConnectionHandle
 }
 
 /** Props the composed input-left entry receives. */
@@ -72,16 +73,13 @@ function readAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Render the text-model upload button, or nothing for image-capable sessions.
+ * Render the composer upload button.
  * @param props - the input-left owner share + standard seats (sessionId) + face.
- * @returns the button cell (empty for capable/unknown sessions).
+ * @returns the button cell (or the pending-draft chip while a draft is staged).
  */
 export function UploadButton(props: UploadButtonProps) {
-  const { t, sessionId, fetchFn, connection } = props
+  const { t, sessionId } = props
   const inputRef = useRef<HTMLInputElement>(null)
-  // undefined = checking (render nothing), true = image-capable (render
-  // nothing: native upload handles it), false = text-only (render button).
-  const [capable, setCapable] = useState<boolean | undefined>(undefined)
 
   // The per-session pending draft + last send-time failure (shared with the
   // sendSession wrapper through the module store).
@@ -93,43 +91,6 @@ export function UploadButton(props: UploadButtonProps) {
     useCallback((listener) => subscribePendingFailure(sessionId, listener), [sessionId]),
     useCallback(() => getPendingFailure(sessionId), [sessionId]),
   )
-
-  // Resolve the session's current provider/model through the connection RPC,
-  // then ask the host whether that model takes image input. Unknown models or
-  // an unreachable bridge resolve as capable (native upload is the safe
-  // default), so the plugin button never hides working native paths.
-  useEffect(() => {
-    let alive = true
-    const check = async () => {
-      let provider = ''
-      let model = ''
-      try {
-        const { result } = await connection.api.sessions.models({ sessionId })
-        const current = result?.ok === true ? result.value?.current : undefined
-        provider = typeof current?.provider === 'string' ? current.provider : ''
-        model = typeof current?.model === 'string' ? current.model : ''
-      } catch {
-        // Session RPC unavailable; fall through with empty ids.
-      }
-      if (provider === '' || model === '') {
-        if (alive) setCapable(true)
-        return
-      }
-      try {
-        const response = await fetchFn(CAPABILITY_API.path, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sessionId, provider, model }),
-        })
-        const body = await response.json() as { ok?: boolean; imageCapable?: boolean }
-        if (alive) setCapable(body.ok === true ? body.imageCapable === true : true)
-      } catch {
-        if (alive) setCapable(true)
-      }
-    }
-    void check()
-    return () => { alive = false }
-  }, [sessionId, connection, fetchFn])
 
   // Validate + stage a picked file as the pending draft (no network I/O —
   // submission happens at send time through the sendSession wrapper).
@@ -156,9 +117,8 @@ export function UploadButton(props: UploadButtonProps) {
 
   // A pending draft renders as a "selected" chip: the send submits the image
   // together with the typed message; clicking ✕ discards the draft. The chip
-  // shows for EVERY session that holds a draft — including image-capable ones,
-  // where the plugin upload button itself is hidden but the generated-image
-  // toolview's 修改 button stages edit references into the same store.
+  // shows for EVERY session that holds a draft, including ones staged by the
+  // generated-image toolview's 修改 button.
   if (draft !== undefined) {
     return (
       <div className={css.wrap}>
@@ -177,10 +137,6 @@ export function UploadButton(props: UploadButtonProps) {
       </div>
     )
   }
-
-  // The pick-file button is text-only sessions only: while unknown or capable,
-  // render nothing (the native upload handles image-capable sessions).
-  if (capable !== false) return null
 
   return (
     <div className={css.wrap}>

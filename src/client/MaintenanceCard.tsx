@@ -10,7 +10,7 @@
  * same loopback maintenance bridge.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { MAINTENANCE_API } from './protocol.ts'
 import css from './settings-card.module.css'
@@ -50,8 +50,10 @@ export interface StorageSectionProps extends MaintenanceCardFace {
  * Render the storage section inside the settings card body.
  * @param props - locale copy + the loopback fetch face.
  * @returns the section.
+ * Memoized: its only props (`t`, `fetchFn`) are stable, so the per-keystroke
+ * settings-card re-render skips this section entirely.
  */
-export function StorageSection({ t, fetchFn }: StorageSectionProps) {
+export const StorageSection = memo(function StorageSection({ t, fetchFn }: StorageSectionProps) {
   const [uploads, setUploads] = useState<AreaStats | undefined>(undefined)
   const [attachments, setAttachments] = useState<AreaStats | undefined>(undefined)
   const [running, setRunning] = useState(false)
@@ -135,4 +137,4 @@ export function StorageSection({ t, fetchFn }: StorageSectionProps) {
       </div>
     </div>
   )
-}
+})

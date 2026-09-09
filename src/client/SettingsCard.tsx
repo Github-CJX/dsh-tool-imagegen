@@ -4,9 +4,15 @@
  * the plugin switches. Registers into the official `settings.plugin.item` slot
  * (the Settings → Plugins → Configurable tab), independent of the dsh-web-ui
  * family group, bound to the plugin's own bridge settings scope.
+ *
+ * Performance: the card subscribes to the whole staged-form snapshot, so every
+ * keystroke rebuilds it. To keep typing smooth the field controls are memoized
+ * and every per-field handler is referentially stable (built once from the
+ * stable form actions) — a keystroke in one field re-renders only that field,
+ * not all twenty.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
@@ -207,6 +213,43 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
     comboAriaLabel: t('comboAria'),
     comboEmptyLabel: t('comboEmpty'),
   }
+
+  // Stable per-field handlers: the form actions (props.edit / props.resetField)
+  // are cached by the slot renderer, so building each field's handler object
+  // once lets the memoized ValueField/BooleanField controls skip re-rendering
+  // when an unrelated field's snapshot changed.
+  const handlers = useMemo(() => {
+    const text = (field: string) => ({
+      onEdit: (value: string) => { props.edit(field, value) },
+      onReset: () => { props.resetField(field) },
+      onClear: () => { props.resetField(field) },
+    })
+    const gated = (field: string) => ({
+      onEdit: (value: string) => { props.edit(field, value) },
+      onReset: () => { props.resetField(field) },
+      onChecked: (checked: boolean) => { props.edit(`${field}_enabled`, checked ? 'true' : 'false') },
+    })
+    const flag = (field: string) => ({
+      onEdit: (value: string) => { props.edit(field, value) },
+      onReset: () => { props.resetField(field) },
+    })
+    return {
+      apiKey: text('apiKey'),
+      apiUrl: text('apiUrl'),
+      model: text('model'),
+      size: text('size'),
+      quality: gated('quality'),
+      output_format: gated('output_format'),
+      background: gated('background'),
+      style: gated('style'),
+      moderation: gated('moderation'),
+      watermark: gated('watermark'),
+      n: text('n'),
+      enabled: flag('enabled'),
+      announceToAgent: flag('announceToAgent'),
+    }
+  }, [props.edit, props.resetField])
+
   if (!state.exposed) {
     return (
       <li className={css.card}>
@@ -262,10 +305,10 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               {...fieldProps}
               {...state.apiKey}
               overridden={false}
-              onEdit={(text) => { props.edit('apiKey', text) }}
-              onReset={() => { props.resetField('apiKey') }}
+              onEdit={handlers.apiKey.onEdit}
+              onReset={handlers.apiKey.onReset}
               clearLabel={t('apiKeyClear')}
-              onClear={() => { props.resetField('apiKey') }}
+              onClear={handlers.apiKey.onClear}
               canClear={keySet}
             />
             <ValueField
@@ -275,8 +318,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder="https://api.ephone.ai/v1"
               {...fieldProps}
               {...state.apiUrl}
-              onEdit={(text) => { props.edit('apiUrl', text) }}
-              onReset={() => { props.resetField('apiUrl') }}
+              onEdit={handlers.apiUrl.onEdit}
+              onReset={handlers.apiUrl.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-model"
@@ -285,8 +328,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder="gpt-image-2"
               {...fieldProps}
               {...state.model}
-              onEdit={(text) => { props.edit('model', text) }}
-              onReset={() => { props.resetField('model') }}
+              onEdit={handlers.model.onEdit}
+              onReset={handlers.model.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-size"
@@ -296,8 +339,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               comboOptions={SIZE_OPTIONS}
               {...fieldProps}
               {...state.size}
-              onEdit={(text) => { props.edit('size', text) }}
-              onReset={() => { props.resetField('size') }}
+              onEdit={handlers.size.onEdit}
+              onReset={handlers.size.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-quality"
@@ -306,12 +349,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.quality}
               checked={state.quality_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('quality_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.quality.onChecked}
               {...fieldProps}
               {...state.quality}
               locked={state.quality_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('quality', text) }}
-              onReset={() => { props.resetField('quality') }}
+              onEdit={handlers.quality.onEdit}
+              onReset={handlers.quality.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-output-format"
@@ -320,12 +363,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.output_format}
               checked={state.output_format_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('output_format_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.output_format.onChecked}
               {...fieldProps}
               {...state.output_format}
               locked={state.output_format_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('output_format', text) }}
-              onReset={() => { props.resetField('output_format') }}
+              onEdit={handlers.output_format.onEdit}
+              onReset={handlers.output_format.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-background"
@@ -334,12 +377,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.background}
               checked={state.background_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('background_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.background.onChecked}
               {...fieldProps}
               {...state.background}
               locked={state.background_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('background', text) }}
-              onReset={() => { props.resetField('background') }}
+              onEdit={handlers.background.onEdit}
+              onReset={handlers.background.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-style"
@@ -348,12 +391,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.style}
               checked={state.style_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('style_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.style.onChecked}
               {...fieldProps}
               {...state.style}
               locked={state.style_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('style', text) }}
-              onReset={() => { props.resetField('style') }}
+              onEdit={handlers.style.onEdit}
+              onReset={handlers.style.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-moderation"
@@ -362,12 +405,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.moderation}
               checked={state.moderation_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('moderation_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.moderation.onChecked}
               {...fieldProps}
               {...state.moderation}
               locked={state.moderation_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('moderation', text) }}
-              onReset={() => { props.resetField('moderation') }}
+              onEdit={handlers.moderation.onEdit}
+              onReset={handlers.moderation.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-watermark"
@@ -376,12 +419,12 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder={t('fieldOptionalPlaceholder')}
               comboOptions={ENUM_OPTIONS.watermark}
               checked={state.watermark_enabled.text === 'true'}
-              onChecked={(checked) => { props.edit('watermark_enabled', checked ? 'true' : 'false') }}
+              onChecked={handlers.watermark.onChecked}
               {...fieldProps}
               {...state.watermark}
               locked={state.watermark_enabled.text !== 'true'}
-              onEdit={(text) => { props.edit('watermark', text) }}
-              onReset={() => { props.resetField('watermark') }}
+              onEdit={handlers.watermark.onEdit}
+              onReset={handlers.watermark.onReset}
             />
             <ValueField
               id="dsh-imagegen-settings-count"
@@ -390,8 +433,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               placeholder="1"
               {...fieldProps}
               {...state.n}
-              onEdit={(text) => { props.edit('n', text) }}
-              onReset={() => { props.resetField('n') }}
+              onEdit={handlers.n.onEdit}
+              onReset={handlers.n.onReset}
             />
             <BooleanField
               id="dsh-imagegen-settings-enabled"
@@ -402,8 +445,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               offLabel={t('off')}
               {...fieldProps}
               {...state.enabled}
-              onEdit={(text) => { props.edit('enabled', text) }}
-              onReset={() => { props.resetField('enabled') }}
+              onEdit={handlers.enabled.onEdit}
+              onReset={handlers.enabled.onReset}
             />
             <BooleanField
               id="dsh-imagegen-settings-announce"
@@ -414,8 +457,8 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
               offLabel={t('off')}
               {...fieldProps}
               {...state.announceToAgent}
-              onEdit={(text) => { props.edit('announceToAgent', text) }}
-              onReset={() => { props.resetField('announceToAgent') }}
+              onEdit={handlers.announceToAgent.onEdit}
+              onReset={handlers.announceToAgent.onReset}
             />
             <div className={css.footer}>
               {state.failed ? <p className={css.failed} role="status">{t('failed')}</p> : null}
@@ -476,12 +519,16 @@ interface FieldProps {
   onReset: () => void
 }
 
-/** A staged value field; `secret` renders a password control and
- *  `comboOptions` renders a self-drawn editable combo (input + option panel
- *  styled as part of the card — the native datalist popup looked detached
- *  from the card). Suggestions are hints only: any typed value is kept,
- *  the panel filters by substring, and the current draft is marked. */
-function ValueField(props: FieldProps & {
+/**
+ * A staged value field; `secret` renders a password control and
+ * `comboOptions` renders a self-drawn editable combo (input + option panel
+ * styled as part of the card — the native datalist popup looked detached
+ * from the card). Suggestions are hints only: any typed value is kept,
+ * the panel filters by substring, and the current draft is marked.
+ * Memoized: with stable handlers + primitive props it re-renders only when
+ * its own draft changed, not when a sibling field was edited.
+ */
+const ValueField = memo(function ValueField(props: FieldProps & {
   /** Render a password control. */
   secret?: boolean
   /** Placeholder shown while the draft is empty. */
@@ -682,10 +729,10 @@ function ValueField(props: FieldProps & {
       </p>
     </div>
   )
-}
+})
 
-/** A staged boolean field: 继承 / 开 / 关. */
-function BooleanField(props: FieldProps & {
+/** A staged boolean field: 继承 / 开 / 关. Memoized like ValueField. */
+const BooleanField = memo(function BooleanField(props: FieldProps & {
   /** Copy for the inherit option. */
   inheritLabel: string
   /** Copy for the on option. */
@@ -727,4 +774,4 @@ function BooleanField(props: FieldProps & {
       <p className={css.hint}>{props.hint}</p>
     </div>
   )
-}
+})

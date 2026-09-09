@@ -159,9 +159,17 @@ function isUploadedImageBlock(block: ContentBlock): block is UploadedImageBlock 
  */
 export const UploadedImageBubble = memo(function UploadedImageBubble(props: UploadedImageBubbleProps) {
   const { node, loadImage, t, sessionId } = props
-  const data = node?.data
-  const content = Array.isArray(data?.content) ? data.content : []
-  const time = data?.time as NodeTime
+  // Shape guards: never throw on an unexpected node carrier — a throw would
+  // abdicate this shadowed renderer and fall back to the shipped bubble,
+  // which would show the raw model-facing envelope text.
+  const record = node !== null && typeof node === 'object'
+    ? (node as { data?: unknown }).data
+    : undefined
+  const message = record !== null && typeof record === 'object'
+    ? record as { content?: unknown; time?: NodeTime }
+    : undefined
+  const content = Array.isArray(message?.content) ? message.content as ContentBlock[] : []
+  const time = message?.time
 
   // Classify: envelope text is model-facing only (filtered out of the bubble);
   // platform images go through the native loader; plugin uploads go through
@@ -205,11 +213,12 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
   )
 
   // Per-attachment URL resolution: plugin uploads are deterministic bridge
-  // URLs; everything else defers to the platform loader.
+  // URLs (only when a session id is actually present); everything else defers
+  // to the platform loader.
   const load = useCallback((attachment: ImageAttachmentRef) => {
-    if (pluginIds.has(String(attachment.attachmentId))) {
+    if (typeof sessionId === 'string' && sessionId !== '' && pluginIds.has(String(attachment.attachmentId))) {
       return Promise.resolve(
-        `${ATTACHMENT_API.path}?session=${encodeURIComponent(String(sessionId))}&id=${encodeURIComponent(String(attachment.attachmentId))}`,
+        `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(String(attachment.attachmentId))}`,
       )
     }
     return loadImage(attachment)
