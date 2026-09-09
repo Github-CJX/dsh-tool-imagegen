@@ -14,6 +14,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import type { ImageGenScope } from './settings-scope.ts'
@@ -264,7 +265,7 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
             <span className={css.name}>{title}</span>
             <span className={css.description}>{t('cardDescription')}</span>
           </span>
-          <span className={open ? css.chevronOpen : css.chevron}>▾</span>
+          <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} />
         </button>
         {open
           ? (
@@ -290,7 +291,7 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
           <span className={css.description}>{t('cardDescription')}</span>
         </span>
         {state.dirty ? <span className={css.pending}>{t('unsaved')}</span> : null}
-        <span className={open ? css.chevronOpen : css.chevron}>▾</span>
+        <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} />
       </button>
       {open
         ? (
@@ -634,7 +635,7 @@ const ValueField = memo(function ValueField(props: FieldProps & {
           disabled={props.disabled || props.locked === true}
           onClick={() => { setOpen(!open) }}
         >
-          ▾
+          <IconChevronDownOutline14 />
         </button>
         {open
           ? (
