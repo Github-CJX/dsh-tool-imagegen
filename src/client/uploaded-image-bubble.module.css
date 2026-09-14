@@ -183,3 +183,31 @@
 .lightboxClose:hover {
   background: #ffffff26;
 }
+
+/* Fallback extra-block inspector (used only when the primitives package does
+   not ship JsonBlock in the running DSH build — see UploadedImageBubble.tsx). */
+.jsonFallback {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.jsonFallback > summary {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.jsonFallbackBody {
+  background: var(--dsw-alias-bg-layer-2);
+  max-height: 220px;
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 6px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

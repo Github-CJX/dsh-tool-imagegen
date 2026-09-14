@@ -1,17 +1,19 @@
 /**
- * Per-session pending-upload store for the text-model upload flow.
+ * Per-session staged-edit store for the image card's 修改 (stageEdit) path.
  *
- * Picking a file does NOT submit anything: the bytes are held here as a
- * "pending" draft (keyed by sessionId) until the user actually sends a message.
- * The composer's sendSession wrapper (see index.ts) consumes the draft at send
- * time — posting it to the upload bridge together with the typed text, so the
- * host enqueues ONE user message ([uploaded-image] block + model-facing
- * envelope carrying the text). Without a draft the wrapper is a pass-through,
- * so ordinary conversation is untouched.
+ * Clicking 修改 does NOT submit anything: the generated image's bytes are held
+ * here as a staged reference (keyed by sessionId) until the user actually sends
+ * a message. The composer's sendSession wrapper (see index.ts) consumes the
+ * staged reference at send time — posting it to the upload bridge together with
+ * the typed text, so the host enqueues ONE user message ([uploaded-image] block
+ * + model-facing envelope carrying the text and the work-dir path the model
+ * echoes back as generate_image's `image` argument). Without a staged reference
+ * the wrapper is a pass-through, so ordinary conversation — the platform's own
+ * native attachments included — is untouched.
  *
- * The store is module-global because the UploadButton (which manages the
- * draft) and the sendSession wrapper (which consumes it) are separate React
- * render paths — the button renders inside `conversation.input.left`, the
+ * The store is module-global because the image card (which stages the reference)
+ * and the sendSession wrapper (which consumes it) are separate React render
+ * paths — the card renders inside the keyed `tool.call.toolview` entry, the
  * wrapper lives on the platform conversation service instance. Session-scoped
  * React state alone cannot span the two, so a tiny external store with
  * useSyncExternalStore subscriptions is used for the UI half.

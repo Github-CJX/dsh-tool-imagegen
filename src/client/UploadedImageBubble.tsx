@@ -19,22 +19,79 @@
  * `undefined` at runtime, which made this renderer crash with React error #130
  * on its very first message (the entry then abdicated and every user bubble
  * fell back to the shipped renderer, exposing the raw model-facing envelope).
+ *
+ * The same hazard applies to every primitive this file used to import by name:
+ * DSH 2.0.10's @deepseek-ai/dsh-client-ui-primitives no longer exports
+ * `MessageText`, so that import was `undefined` and reproduced exactly that
+ * crash/abdication. All primitives now resolve through {@link primitive} with
+ * inline fallbacks, and user text renders as plain text.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  IconCheckOutline16,
-  IconCopyOutline16,
-  JsonBlock,
-  MessageText,
-  Tooltip,
-  writeClipboard,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+// Namespace import on purpose: this package's named exports drift between DSH
+// releases (2.0.10 replaced `MessageText` with a `projectUserText` that returns
+// the projected nodes itself). A missing named export is NOT a build error —
+// it is `undefined` at runtime, and rendering `<undefined>` makes React throw
+// error #130, which ABDICATES this shadowed entry. Every user bubble would then
+// fall back to the shipped renderer and leak the raw model-facing envelope.
+// Each primitive is therefore resolved through one defensive lookup below.
+import * as primitivesModule from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import { ATTACHMENT_API, envelopeRequestText, UPLOAD_ENVELOPE_PREFIX, type UploadedImageBlock } from './protocol.ts'
 import css from './uploaded-image-bubble.module.css'
+
+/** Defensive primitive lookup: an absent export degrades to a fallback, never throws. */
+function primitive<T>(name: string, fallback: T): T {
+  const value = (primitivesModule as unknown as Record<string, unknown>)[name]
+  return value === undefined ? fallback : value as T
+}
+
+/** Stand-in for an icon that this DSH build no longer ships. */
+function NoIcon(): ReactNode {
+  return null
+}
+
+/** Tooltip stand-in: render the labelled child unchanged. */
+function PassthroughTooltip(props: { children?: ReactNode }): ReactNode {
+  return props.children ?? null
+}
+
+/** Serialize one block for the fallback inspector without throwing on cycles. */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? ''
+  } catch {
+    return '[unserializable content block]'
+  }
+}
+
+/** JsonBlock stand-in: same disclosure shape, no primitive dependency. */
+function PlainJsonBlock(props: { label: string; payload: unknown }): ReactNode {
+  return (
+    <details className={css.jsonFallback}>
+      <summary>{props.label}</summary>
+      <pre className={css.jsonFallbackBody}>{safeJson(props.payload)}</pre>
+    </details>
+  )
+}
+
+/** Clipboard stand-in: the standard async API, reporting success like the primitive. */
+async function fallbackWriteClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const IconCheckOutline16 = primitive<ComponentType>('IconCheckOutline16', NoIcon)
+const IconCopyOutline16 = primitive<ComponentType>('IconCopyOutline16', NoIcon)
+const Tooltip = primitive<ComponentType<{ children?: ReactNode }>>('Tooltip', PassthroughTooltip)
+const JsonBlock = primitive<ComponentType<{ label: string; payload: unknown; truncatedLabel?: (total: number) => string }>>('JsonBlock', PlainJsonBlock)
+const writeClipboard = primitive<(text: string) => Promise<boolean>>('writeClipboard', fallbackWriteClipboard)
 
 /** Props the composed chat-node entry receives (owner + standard seats). */
 export type UploadedImageBubbleProps =
@@ -72,8 +129,10 @@ function formatClock(time: NodeTime, t: Translate): string | undefined {
 
 /**
  * Display projection of reference forms in a user bubble — the shipped
- * projectUserText replication: plain-text `/name` / `@name` word-boundary
- * tokens decorate as chips, everything else stays plain text.
+ * `projectUserText` replication: plain-text `/name` / `@name` word-boundary
+ * tokens decorate as chips, everything else stays plain text. Text renders as
+ * plain React text (the shipped projection does the same); it must NOT depend
+ * on a text primitive, whose name changed across DSH releases.
  */
 function projectUserText(text: string): ReactNode {
   const pattern = /(^|\s)([/@][\w-]+)(?=\s|$)/g
@@ -83,7 +142,7 @@ function projectUserText(text: string): ReactNode {
   while ((match = pattern.exec(text)) !== null) {
     const tokenStart = match.index + (match[1]?.length ?? 0)
     const label = match[2] ?? ''
-    if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
+    if (tokenStart > cursor) parts.push(text.slice(cursor, tokenStart))
     parts.push(
       <span
         key={tokenStart}
@@ -95,8 +154,8 @@ function projectUserText(text: string): ReactNode {
     )
     cursor = tokenStart + label.length
   }
-  if (parts.length === 0) return <MessageText text={text} />
-  if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
+  if (parts.length === 0) return text
+  if (cursor < text.length) parts.push(text.slice(cursor))
   return <>{parts}</>
 }
 

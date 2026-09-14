@@ -24,7 +24,6 @@ import { ImageGenSettingsCard, ImageGenSettingsCardController, type ImageGenSett
 import { bindImageGenScope, type ImageGenScope } from './settings-scope.ts'
 import { GenerateImageView, type GenerateImageViewFace } from './GenerateImageView.tsx'
 import { type MaintenanceCardFace } from './MaintenanceCard.tsx'
-import { UploadButton, type UploadButtonFace } from './UploadButton.tsx'
 import { UploadedImageBubble } from './UploadedImageBubble.tsx'
 import { ATTACHMENT_API, OPEN_API, UPLOAD_API } from './protocol.ts'
 import { getPending, setPending, setPendingFailure } from './pending-upload.ts'
@@ -123,18 +122,24 @@ export function apply(ctx: ClientContext): void {
 
   // Inline generated-image view: the keyed toolview entry owns how
   // generate_image calls render in the conversation. Its inject face binds
-  // loadImage to the plugin's own loopback attachment bridge — the
+  // bridgeImageUrl to the plugin's own loopback attachment bridge — the
   // conversation service's resolveImage authorizes only `image` blocks
   // referenced by session events, and this plugin never writes `image`
   // blocks (text-only model safety). The bridge re-checks the same session
   // reference against `generated-image` blocks before serving the bytes.
+  //
+  // The face field is deliberately NOT named `loadImage`: the owner share of
+  // `tool.call.toolview` already carries a platform `loadImage`, and the slot
+  // renderer spreads owner props LAST (owner wins), so a face field with that
+  // name is silently shadowed — the view would then resolve through the
+  // platform route and fail with `session/attachment-invalid`.
   try {
     ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
       name: 'tool.call.toolview',
       key: 'generate_image',
       locale: NS,
       inject: (sessionId): GenerateImageViewFace => ({
-        loadImage: (attachment) => Promise.resolve(
+        bridgeImageUrl: (attachment) => Promise.resolve(
           `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(attachment.attachmentId)}`,
         ),
         // 本地打开: the host re-checks the session reference, copies the bytes
@@ -179,37 +184,24 @@ export function apply(ctx: ClientContext): void {
     console.warn('[dsh-tool-imagegen] toolview registration failed:', error)
   }
 
-  // Text-model upload entry: a composer tool-row button shown unconditionally
-  // (see UploadButton). Picking a file only stages a pending draft — the
-  // sendSession wrapper below submits it (with the typed text) at send time;
-  // the host then enqueues the [uploaded-image] + envelope user message — the
-  // model never sees image blocks, the user sees the picture inline.
-  const uploadFace: UploadButtonFace = {
-    fetchFn: bridgeFetch,
-  }
-  try {
-    ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-      name: 'conversation.input.left',
-      id: 'imagegen-upload',
-      order: 10,
-      locale: NS,
-      inject: () => uploadFace,
-    }, UploadButton))
-  } catch (error) {
-    console.warn('[dsh-tool-imagegen] upload button registration failed:', error)
-  }
+  // Reference-image entry: the composer's OWN attachment button. The plugin
+  // used to add a second, custom upload button (conversation.input.left) for
+  // text-only models, which staged a pending draft submitted through the
+  // plugin's upload bridge. The platform now uploads image attachments itself
+  // (native `image` blocks the model can consume), so the duplicate button is
+  // gone; what remains is the sendSession wrapper below, which still serves the
+  // image card's 修改 (stageEdit) staging path.
 
   // Send-time interception: wrap the platform conversation service's
-  // sendSession so a pending upload is submitted TOGETHER with the typed
-  // message. The platform composer calls sendSession(session, text, imageIds,
-  // mode) on submit (sink); when this session holds a pending upload draft,
-  // the wrapper posts it to the upload bridge with the text instead, and the
-  // host enqueues ONE user message ([uploaded-image] + envelope carrying the
-  // text). The platform's own draft images (imageIds) are ignored here — the
-  // text-only path never produces them; without a draft the wrapper is a
-  // pass-through, so ordinary conversation is untouched. A failed upload
-  // throws (the composer restores the draft text) and the pending draft is
-  // kept for a retry.
+  // sendSession so an image staged by the card's 修改 button is submitted
+  // TOGETHER with the typed message. The platform composer calls
+  // sendSession(session, text, imageIds, mode) on submit (sink); when this
+  // session holds a staged edit reference, the wrapper posts it to the upload
+  // bridge with the text instead, and the host enqueues ONE user message
+  // ([uploaded-image] + envelope carrying the text). Without a staged draft the
+  // wrapper is a pass-through, so ordinary conversation — native attachments
+  // included — is untouched. A failed upload throws (the composer restores the
+  // draft text) and the staged draft is kept for a retry.
   try {
     const conversation = ctx.get('conversation') as {
       sendSession: (session: { sessionId?: string }, text: string, imageIds: unknown[], mode: unknown) => Promise<{ ok: boolean }>
@@ -222,7 +214,7 @@ export function apply(ctx: ClientContext): void {
         if (draft === undefined) return originalSend(session, text, imageIds, mode)
         let response
         try {
-          response = await uploadFace.fetchFn(UPLOAD_API.path, {
+          response = await bridgeFetch(UPLOAD_API.path, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({

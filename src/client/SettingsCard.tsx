@@ -12,14 +12,23 @@
  * not all twenty.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+// Defensive primitive lookup: this package's named exports drift between DSH
+// releases, and a missing export is `undefined` at runtime — rendering it makes
+// React throw error #130 and abdicates this keyed settings-card entry. The
+// chevron is decoration, so an absent icon degrades to nothing.
+import * as primitivesModule from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import type { ImageGenScope } from './settings-scope.ts'
 import { StorageSection, type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import css from './settings-card.module.css'
+
+/** Chevron icon, or a no-op stand-in when this DSH build does not ship it. */
+const IconChevronDownOutline14: ComponentType<{ className?: string }> =
+  ((primitivesModule as unknown as Record<string, unknown>).IconChevronDownOutline14 ??
+    (() => null)) as ComponentType<{ className?: string }>
 
 /** The fields this card edits (the namespace's full schema). */
 export interface ImageGenSettings {

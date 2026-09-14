@@ -138,26 +138,39 @@ try {
   const cards = registrations.filter((r) => r.name === 'settings.plugin.item')
   const card = cards.find((r) => r.key === 'dsh-imagegen')
   const toolview = registrations.find((r) => r.name === 'tool.call.toolview')
-  const upload = registrations.find((r) => r.name === 'conversation.input.left')
   const bubble = registrations.find((r) => r.name === 'conversation.chat.node')
   check('settings.plugin.item card registered keyed by namespace', card !== undefined && card?.key === 'dsh-imagegen')
   check('only one settings card (rc.7 keyed slot = one entry per key)', cards.length === 1)
   check('settings card locale is dsh-imagegen', card?.locale === 'dsh-imagegen')
   check('settings card inject carries maintenance fetchFn (storage section)', typeof card?.inject?.()?.maintenance?.fetchFn === 'function')
   check('tool.call.toolview registered keyed by generate_image', toolview !== undefined && toolview.key === 'generate_image')
-  check('toolview inject returns a loadImage face', typeof toolview?.inject?.()?.loadImage === 'function')
+  check('toolview inject returns a bridgeImageUrl face', typeof toolview?.inject?.()?.bridgeImageUrl === 'function')
   const toolFace = toolview?.inject?.('session-1')
-  const bridge = toolFace?.loadImage?.({ attachmentId: 'att-42' })
-  check('loadImage returns a thenable bridge URL', typeof bridge?.then === 'function')
+  // The face must NOT reuse the owner prop name: the slot renderer spreads
+  // owner props last, and `tool.call.toolview` owner props already carry a
+  // platform `loadImage`, which would shadow the bridge (session/attachment-invalid).
+  check('toolview face does not shadow the owner loadImage prop', toolFace?.loadImage === undefined)
+  const bridge = toolFace?.bridgeImageUrl?.({ attachmentId: 'att-42' })
+  check('bridgeImageUrl returns a thenable bridge URL', typeof bridge?.then === 'function')
   check('bridge URL carries session and id', source.includes('dsh-tool-imagegen/attachment') && source.includes('encodeURIComponent(attachment.attachmentId)'))
   check('toolview face carries openLocally', typeof toolFace?.openLocally === 'function')
   check('openLocally posts to the local-open bridge', source.includes('dsh-tool-imagegen/open'))
   check('toolview face carries stageEdit (modify button)', typeof toolFace?.stageEdit === 'function')
   check('stageEdit readiness copy is in the bundle', source.includes('已加入待发送'))
-  check('conversation.input.left upload button registered', upload !== undefined && upload.id === 'imagegen-upload')
-  check('upload button locale is dsh-imagegen', upload?.locale === 'dsh-imagegen')
-  const uploadFace = upload?.inject?.()
-  check('upload inject returns the loopback fetch face', typeof uploadFace?.fetchFn === 'function')
+  // Primitive drift guard: DSH 2.0.10 dropped `MessageText` from
+  // @deepseek-ai/dsh-client-ui-primitives. Importing it by name yields
+  // `undefined`, rendering it throws React error #130, and that crash ABDICATES
+  // the shadowed user-bubble entry — every user bubble then falls back to the
+  // shipped renderer and leaks the raw model-facing envelope.
+  // (the docstring may mention the name; what must not exist is the ACCESS)
+  check('no removed MessageText primitive is accessed', !source.includes('.MessageText'))
+  check('user bubble resolves primitives defensively',
+    source.includes('PlainJsonBlock') && source.includes('fallbackWriteClipboard'))
+  check('settings card resolves its icon defensively', source.includes('IconChevronDownOutline14'))
+  // The plugin's own upload button is gone: the composer's native attachment
+  // button owns reference uploads now. Re-adding conversation.input.left would
+  // put a second, duplicate button in the composer.
+  check('no custom composer upload button registered', registrations.every((r) => r.name !== 'conversation.input.left'))
   check('conversation.sendSession was wrapped (instance method patched)', typeof conversationStub.sendSession === 'function' && conversationStub.calls.length === 0)
   wrappedSend = conversationStub.sendSession
   check('conversation.chat.node user shadow at priority -1', bubble !== undefined && bubble.key === 'user' && bubble.priority === -1)

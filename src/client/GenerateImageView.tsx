@@ -38,8 +38,15 @@ export interface GenerateImageViewFace {
    * Resolve one durable attachment to a browser URL. Served by the plugin's
    * own loopback attachment bridge (the conversation service's resolveImage
    * only authorizes `image` blocks, which this plugin never writes).
+   *
+   * NOT named `loadImage`: the slot renderer composes an entry as
+   * `{...kit, ...injected, ...ownerProps}` — owner props win — and the
+   * `tool.call.toolview` owner share already carries a platform `loadImage`
+   * (the session-authorized loader). A face field of that name is silently
+   * shadowed, so the view would resolve through the platform route and fail
+   * with `session/attachment-invalid` for every `generated-image` block.
    */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  bridgeImageUrl: (attachment: ImageAttachmentRef) => Promise<string>
   /**
    * Ask the host to open one image in the system's default image viewer: the
    * host re-checks the session reference, copies the bytes to a temp file,
@@ -124,7 +131,7 @@ function promptFromArgs(block: unknown): string | undefined {
 
 /**
  * Render the generate_image call inline.
- * @param props - the tool call's owner share, the locale seat, and loadImage.
+ * @param props - the tool call's owner share, the locale seat, and bridgeImageUrl.
  * @returns the inline card.
  */
 export function GenerateImageView(props: GenerateImageViewProps) {
@@ -236,7 +243,7 @@ export function GenerateImageView(props: GenerateImageViewProps) {
           <ImageRow
             key={image.attachment.attachmentId ?? `generated-${index}`}
             image={image}
-            loadImage={props.loadImage}
+            bridgeImageUrl={props.bridgeImageUrl}
             openLocally={props.openLocally}
             stageEdit={props.stageEdit}
             onView={(url, name) => setViewing({ url, name })}
@@ -293,14 +300,14 @@ function fileNameOf(image: GeneratedImageBlock, index: number): string {
 /** One generated image: resolve its URL, then render the frame + caption. */
 function ImageRow(props: {
   image: GeneratedImageBlock
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  bridgeImageUrl: (attachment: ImageAttachmentRef) => Promise<string>
   openLocally: (attachment: ImageAttachmentRef) => Promise<void>
   stageEdit: (attachment: ImageAttachmentRef) => Promise<void>
   onView: (url: string, name: string) => void
   t: (key: ImageGenLocaleKey) => string
   index: number
 }) {
-  const { image, loadImage, openLocally, stageEdit, onView, t, index } = props
+  const { image, bridgeImageUrl, openLocally, stageEdit, onView, t, index } = props
   const [url, setUrl] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<string | undefined>(undefined)
   // Local-open handshake: idle → opening → idle (success) or failed (error).
@@ -328,14 +335,14 @@ function ImageRow(props: {
 
   useEffect(() => {
     let alive = true
-    loadImage(image.attachment)
+    bridgeImageUrl(image.attachment)
       .then((resolved) => { if (alive) setUrl(resolved) })
       .catch((error: unknown) => {
         if (!alive) return
         setFailed(error instanceof Error ? error.message : String(error))
       })
     return () => { alive = false }
-  }, [loadImage, image.attachment])
+  }, [bridgeImageUrl, image.attachment])
 
   const handleOpen = () => {
     if (openState === 'opening') return
