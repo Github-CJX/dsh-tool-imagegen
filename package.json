@@ -17,7 +17,7 @@
     "dsh-plugin"
   ],
   "type": "module",
-  "description": "DSH 对话内联生图插件：OpenAI 兼容接口，图片以 generated-image 块直接显示在对话框内，设置项在「插件」页的官方配置卡里。",
+  "description": "DSH 对话内联生图插件（只支持官方 DeepSeek Harness Desktop）：OpenAI 兼容接口，生图结果以平台原生 image 块直接显示在对话里，设置项在「插件」页的官方配置卡里。",
   "main": "./lib/index.js",
   "exports": {
     ".": "./lib/index.js",

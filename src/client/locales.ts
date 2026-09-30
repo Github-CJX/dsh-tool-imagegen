@@ -73,6 +73,7 @@ export type ImageGenLocaleKey =
   | 'toolviewEditing'
   | 'toolviewEditReady'
   | 'toolviewEditFailed'
+  | 'toolviewEditNoHandle'
   | 'toolviewSize'
   | 'toolviewDetails'
   | 'toolviewPromptExpand'
@@ -176,6 +177,7 @@ export const zh: Record<ImageGenLocaleKey, string> = {
   toolviewEditing: '处理中…',
   toolviewEditReady: '已加入待发送：输入修改需求后发送',
   toolviewEditFailed: '操作失败',
+  toolviewEditNoHandle: '这张图片没有可用的编辑副本（工作目录副本已被清理）',
   toolviewSize: '尺寸',
   toolviewDetails: '详情',
   toolviewPromptExpand: '展开提示词',
@@ -280,6 +282,7 @@ export const en: Record<ImageGenLocaleKey, string> = {
   toolviewEditing: 'Preparing…',
   toolviewEditReady: 'Added as edit reference — type your request and send',
   toolviewEditFailed: 'Edit failed',
+  toolviewEditNoHandle: 'This image has no editable copy left (its work-dir copy was pruned)',
   toolviewSize: 'Size',
   toolviewDetails: 'Details',
   toolviewPromptExpand: 'Show full prompt',

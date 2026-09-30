@@ -22,26 +22,40 @@ import { en, zh, type ImageGenLocaleKey } from './locales.ts'
 import { ImageGenSettingsCard, ImageGenSettingsCardController, type ImageGenSettingsCardFace } from './SettingsCard.tsx'
 import { bindImageGenScope, unavailableScope, type ConfigFormsLike, type ImageGenScope } from './settings-scope.ts'
 import { GenerateImageView, type GenerateImageViewFace } from './GenerateImageView.tsx'
+import { GeneratedTurnTail, type GeneratedTurnTailFace } from './GeneratedTurnTail.tsx'
+import { GENERATED_IMAGES_KIND, generatedImagesDefinition, type GeneratedTurnCall } from './turn-definition.ts'
 import { type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import { UploadedImageBubble } from './UploadedImageBubble.tsx'
-import { ATTACHMENT_API, OPEN_API, UPLOAD_API } from './protocol.ts'
+import { generatedImagesMeta, generatedTurnsUrl, IMAGEGEN_IMAGES_API, OPEN_API, UPLOAD_API } from './protocol.ts'
 import { getPending, setPending, setPendingFailure } from './pending-upload.ts'
 
 /** Per-image byte cap for staging an edit reference (host maxImageBytes). */
 const MAX_EDIT_BYTES = 5 * 1024 * 1024
 
-/** Read a Blob as a base64 data URL (mirrors the upload button's File path). */
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-    reader.onerror = () => reject(new Error('image read failed'))
-    reader.readAsDataURL(blob)
-  })
-}
-
 /** Locale namespace this plugin owns. */
 const NS = 'dsh-imagegen'
+
+/**
+ * Read one call's generated-images manifest from the plugin's loopback route.
+ * A non-OK response degrades to an empty object so callers treat a missing
+ * manifest as "no extra metadata" rather than an error.
+ */
+async function readManifest(
+  fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  sessionId: string,
+  callId: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const response = await fetchFn(
+      `${IMAGEGEN_IMAGES_API.path}?session=${encodeURIComponent(sessionId)}&call=${encodeURIComponent(callId)}`,
+    )
+    if (response.ok !== true) return {}
+    const body = await response.json()
+    return body !== null && typeof body === 'object' ? body as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
 
 /**
  * The plugin's profile entry id in the host composition. In the current DSH a
@@ -69,6 +83,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * sibling UI package.
      */
     'plugins.item': { kind: 'list'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
+
+    /**
+     * ui-chat's Turn-tail list seat, declared by `@deepseek-ai/dsh-client-ui-chat`
+     * and shared with every Turn-level artifact (the shipped changed-files card
+     * and the schedule card register here too). It renders beneath a completed
+     * Turn's closing prose and OUTSIDE that Turn's collapsible tool group —
+     * which is exactly where a generated picture belongs. Spelled here so this
+     * package can register without depending on the sibling UI package.
+     */
+    'conversation.chat.turnTail': {
+      kind: 'list'
+      scope: 'session'
+      owner: import('./GeneratedTurnTail.tsx').GeneratedTurnTailOwnerProps
+    }
   }
 }
 
@@ -78,8 +106,25 @@ export interface ImageGenPluginItemOwnerProps {
   view: 'summary' | 'page'
 }
 
-/** Required services (fiber inject waiting — the runtime must be up first). */
+/**
+ * Required services (fiber inject waiting — the runtime must be up first).
+ *
+ * `uiConversation` is deliberately NOT listed: the Turn-level card's
+ * registration is the only thing that needs it, and gating the WHOLE client
+ * half on a service that may mount later would silently switch off the
+ * settings card and the toolview too. It is acquired with a scoped
+ * `ctx.inject(...)` below instead, so a late-arriving registry costs only the
+ * Turn-level card.
+ */
 export const inject = ['slots', 'locale', 'connection', 'conversation', 'configForms']
+
+/**
+ * Build marker, logged once at apply. It is the only way to tell from the
+ * outside which client bundle a running page actually loaded: DSH can serve a
+ * module bundle out of the browser's cache, so "the file on disk is new" does
+ * not prove "the page is running it".
+ */
+const CLIENT_BUILD = 'imagegen-client/2026-09-30-turn-tail'
 
 /**
  * Mount the settings card and the inline generated-image view.
@@ -147,27 +192,18 @@ export function apply(ctx: ClientContext): void {
   }
 
   // Inline generated-image view: the keyed toolview entry owns how
-  // generate_image calls render in the conversation. Its inject face binds
-  // bridgeImageUrl to the plugin's own loopback attachment bridge — the
-  // conversation service's resolveImage authorizes only `image` blocks
-  // referenced by session events, and this plugin never writes `image`
-  // blocks (text-only model safety). The bridge re-checks the same session
-  // reference against `generated-image` blocks before serving the bytes.
+  // generate_image calls render in the conversation. The pictures themselves
+  // are native `image` blocks in the tool result, so they resolve through the
+  // platform loader the slot owner supplies (`props.loadImage`, the same
+  // session-authorized loader the shipped read_image card uses) — this plugin
+  // never ships image bytes and never shadows that prop. The injected face
+  // covers only what the platform does not: 本地打开 (host-side viewer), 修改
+  // (stage a new edit reference), and the per-call metadata fallback.
   //
-  // The face field is deliberately NOT named `loadImage`: the owner share of
-  // `tool.call.toolview` already carries a platform `loadImage`, and the slot
-  // renderer spreads owner props LAST (owner wins), so a face field with that
-  // name is silently shadowed — the view would then resolve through the
-  // platform route and fail with `session/attachment-invalid`.
-  try {
-    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
-      name: 'tool.call.toolview',
-      key: 'generate_image',
-      locale: NS,
-      inject: (sessionId): GenerateImageViewFace => ({
-        bridgeImageUrl: (attachment) => Promise.resolve(
-          `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(attachment.attachmentId)}`,
-        ),
+  // The SAME face serves the Turn-tail card below: both entries close over the
+  // session id their own `inject(sessionId)` receives, so the two surfaces
+  // cannot drift apart in what they can do.
+  const makeFace = (sessionId: string): GenerateImageViewFace => ({
         // 本地打开: the host re-checks the session reference, copies the bytes
         // to a temp file, and hands them to the system's image viewer.
         openLocally: (attachment) => bridgeFetch(OPEN_API.path, {
@@ -186,29 +222,130 @@ export function apply(ctx: ClientContext): void {
         // wrapper then submits image + text through the upload bridge and the
         // model edits via generate_image with the work-dir path. The channel
         // is model-agnostic: `uploaded-image` blocks + the text envelope work
-        // identically for text-only and image-capable models (the envelope
-        // carries the path; the block type is invisible to both).
-        stageEdit: async (attachment) => {
-          const bytes = typeof attachment.bytes === 'number' ? attachment.bytes : Number.POSITIVE_INFINITY
+        // identically for text-only and image-capable models.
+        stageEdit: async (image) => {
+          if (typeof image.data !== 'string' || image.data === '') {
+            throw new Error('无法读取图片：缺少图片数据')
+          }
+          const bytes = typeof image.bytes === 'number' ? image.bytes : Number.POSITIVE_INFINITY
           if (bytes > MAX_EDIT_BYTES) throw new Error('图片超过 5MB 上限，无法作为修改参考')
-          const response = await bridgeFetch(
-            `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(attachment.attachmentId)}`,
-          )
-          if (response.ok !== true) throw new Error(`无法读取图片：HTTP ${response.status}`)
-          const dataUrl = await blobToDataUrl(await response.blob())
-          const comma = dataUrl.indexOf(',')
           setPending(sessionId, {
-            mediaType: typeof attachment.mediaType === 'string' && attachment.mediaType !== '' ? attachment.mediaType : 'image/png',
-            data: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
-            name: typeof attachment.name === 'string' && attachment.name !== '' ? attachment.name : 'generated-image.png',
+            mediaType: typeof image.mediaType === 'string' && image.mediaType !== '' ? image.mediaType : 'image/png',
+            data: image.data,
+            name: typeof image.name === 'string' && image.name !== '' ? image.name : 'generated-image.png',
           })
           setPendingFailure(sessionId, undefined)
         },
-      }),
+        // Metadata fallback: the platform normally delivers the tool's
+        // `presentationMeta` as `tool/result.data.meta`; when a build does not,
+        // the manifest route still yields the captions and work-dir handles.
+        loadImagesMeta: async (callId) => {
+          const body = await readManifest(bridgeFetch, sessionId, callId)
+          return generatedImagesMeta(body)
+        },
+        // Every settled generate_image call of this session, grouped by Turn,
+        // read from the host's own log. The Turn-level card uses this only when
+        // the client-side fold has nothing: a Definition only sees events
+        // matched after it registered, so a Turn folded earlier (or outside the
+        // loaded window) would otherwise render no card at all.
+        loadTurnImages: async () => {
+          const response = await bridgeFetch(generatedTurnsUrl(sessionId))
+          if (response.ok !== true) return {}
+          const body = await response.json() as { turns?: unknown }
+          if (!Array.isArray(body.turns)) return {}
+          const byTurn: Record<number, GeneratedTurnCall[]> = {}
+          for (const entry of body.turns) {
+            if (entry === null || typeof entry !== 'object') continue
+            const record = entry as Record<string, unknown>
+            if (typeof record.turn !== 'number' || !Array.isArray(record.calls)) continue
+            byTurn[record.turn] = record.calls as GeneratedTurnCall[]
+          }
+          return byTurn
+        },
+        // Edit bytes for one picture: the host serves the exact bytes it handed
+        // the model as that call's edit handle.
+        loadEditBytes: async (attachmentId, callId) => {
+          const body = await readManifest(bridgeFetch, sessionId, callId)
+          const images = (body as { images?: unknown }).images
+          if (!Array.isArray(images)) return undefined
+          for (const entry of images) {
+            if (entry === null || typeof entry !== 'object') continue
+            const record = entry as Record<string, unknown>
+            if (record.attachmentId !== attachmentId) continue
+            if (typeof record.data === 'string' && record.data !== '') return record.data
+          }
+          return undefined
+        },
+  })
+
+  try {
+    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
+      name: 'tool.call.toolview',
+      key: 'generate_image',
+      locale: NS,
+      inject: makeFace,
     }, GenerateImageView))
   } catch (error) {
     console.warn('[dsh-tool-imagegen] toolview registration failed:', error)
   }
+
+  // Turn-level picture card. The default ("compact") transcript folds a closed
+  // Turn's tool calls into a collapsible process group, so the toolview's
+  // picture — which is what the user sees while the Turn is still open —
+  // disappears from the reading flow once the Turn ends. The Definition folds
+  // each Turn's settled generate_image results out of the persisted session
+  // events, and this list seat renders them BENEATH the Turn's closing prose
+  // and OUTSIDE that group, so a generated picture reads as part of the answer.
+  // Both halves are the shipped pattern (ui-schedule's `schedule_create` card
+  // and ui-deliverables' changed-files card use the same two registrations).
+  const registerTurnCard = (registry: { events?: { register?: (definition: unknown) => unknown } }): void => {
+    if (typeof registry.events?.register !== 'function') {
+      throw new Error('uiConversation exposes no events.register')
+    }
+    registry.events.register(generatedImagesDefinition)
+    ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: GENERATED_IMAGES_KIND,
+      order: 30,
+      locale: NS,
+      inject: (sessionId) => makeFace(sessionId),
+    }, GeneratedTurnTail))
+  }
+  try {
+    const conversationService = ctx.get('uiConversation') as {
+      events?: { register?: (definition: unknown) => unknown }
+    } | undefined
+    if (conversationService !== undefined && typeof conversationService.events?.register === 'function') {
+      registerTurnCard(conversationService)
+      console.info(`[dsh-tool-imagegen] ${CLIENT_BUILD}: Turn-level card registered (registry already available)`)
+    } else {
+      // The conversation runtime may mount after this plugin. Register through
+      // a SCOPED inject so a late arrival costs only this card, never the rest
+      // of the plugin.
+      const scopedInject = (ctx as unknown as {
+        inject?: (services: string[], callback: (scoped: ClientContext) => void) => unknown
+      }).inject
+      if (typeof scopedInject === 'function') {
+        scopedInject.call(ctx, ['uiConversation'], (scoped) => {
+          try {
+            const late = scoped.get('uiConversation') as {
+              events?: { register?: (definition: unknown) => unknown }
+            } | undefined
+            registerTurnCard(late ?? {})
+            console.info(`[dsh-tool-imagegen] ${CLIENT_BUILD}: Turn-level card registered (registry arrived late)`)
+          } catch (error) {
+            console.warn('[dsh-tool-imagegen] Turn-tail card registration failed:', error)
+          }
+        })
+        console.info(`[dsh-tool-imagegen] ${CLIENT_BUILD}: waiting for the conversation event registry`)
+      } else {
+        console.warn(`[dsh-tool-imagegen] ${CLIENT_BUILD}: no uiConversation service and no scoped inject; Turn-level card not registered`)
+      }
+    }
+  } catch (error) {
+    console.warn('[dsh-tool-imagegen] Turn-tail card registration failed:', error)
+  }
+  console.info(`[dsh-tool-imagegen] ${CLIENT_BUILD}: apply complete`)
 
   // Reference-image entry: the composer's OWN attachment button. The plugin
   // used to add a second, custom upload button (conversation.input.left) for

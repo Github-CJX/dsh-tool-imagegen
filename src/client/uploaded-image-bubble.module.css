@@ -145,10 +145,13 @@
 }
 
 /* Fullscreen preview overlay (plugin-owned; the attachment lightbox is not
- * importable for the same reason as ImageGallery). */
+ * importable for the same reason as ImageGallery). Portaled to document.body
+ * by the component, so the fixed layer is never trapped inside the
+ * transcript's containing block; the z-index clears the platform's floating
+ * layers (its elevation overlays sit at 1100). */
 .lightbox {
   position: fixed;
-  z-index: 1000;
+  z-index: 2147483000;
   background: #000c;
   justify-content: center;
   align-items: center;

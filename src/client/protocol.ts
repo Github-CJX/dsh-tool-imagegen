@@ -20,17 +20,55 @@
 export const IMAGEGEN_SETTINGS_NAMESPACE = 'dsh-imagegen'
 
 /**
- * Loopback bridge route serving generated-image bytes to the GUI. The
- * platform's own attachment authorization only recognizes `image` blocks
- * referenced by session events; this plugin deliberately never writes
- * `image` blocks (text-only model safety), so the inline view resolves
- * generated images through this route instead. The route re-checks the
- * session's events for a `generated-image` block referencing the id — the
- * same trust model as the platform route, over this plugin's block type.
+ * Loopback bridge reporting, for one `generate_image` call, what that call
+ * produced — the durable attachment references plus the work-dir edit handles
+ * and captions — as compact JSON.
+ *
+ * The pictures themselves travel as native `image` blocks in the tool's own
+ * result, so the browser loads them through the platform's session-authorized
+ * `loadImage` loader (`ToolCallOwnerProps.loadImage`) and reuses the shipped
+ * `tool.call.images` lightbox. This route only carries the facts an `image`
+ * block cannot: the per-image upload work-dir path (also handed to the model in
+ * the result's text envelope) and the prompt/model/size captions.
  */
-export const ATTACHMENT_API = {
-  path: '/api/dsh-tool-imagegen/attachment',
+export const IMAGEGEN_IMAGES_API = {
+  path: '/api/dsh-tool-imagegen/images',
 } as const
+
+/**
+ * Browser URL of one generated image's bytes.
+ *
+ * The toolview resolves its pictures through the platform's own
+ * session-authorized `loadImage` (the tool result carries native `image`
+ * blocks). The turn-level card cannot: it renders at the turn tail, where that
+ * loader is not part of the owner props, so it reads the bytes from this
+ * plugin's own route. Authorization is the same rule either way — the route
+ * only answers for a call the named session actually holds (or the run this
+ * process retained for it).
+ * @param sessionId - the session the call belongs to.
+ * @param callId - the `generate_image` call id.
+ * @param index - the image's position within that call's result.
+ * @returns the relative URL of the image bytes.
+ */
+export function generatedImageUrl(sessionId: string, callId: string, index: number): string {
+  return `${IMAGEGEN_IMAGES_API.path}?session=${encodeURIComponent(sessionId)}`
+    + `&call=${encodeURIComponent(callId)}&index=${index}`
+}
+
+/**
+ * Browser URL of one session's whole Turn-level generated-image projection.
+ *
+ * The Turn-tail card prefers the client-side fold, which costs no request. This
+ * route is the fallback for what that fold cannot cover: a Definition only sees
+ * events matched AFTER it was registered, so a Turn whose events were folded
+ * earlier — or a Turn outside the loaded window — has no client-side data. The
+ * host reads the same facts from the session's own durable log.
+ * @param sessionId - the session to project.
+ * @returns the relative URL of the per-Turn manifest.
+ */
+export function generatedTurnsUrl(sessionId: string): string {
+  return `${IMAGEGEN_IMAGES_API.path}?session=${encodeURIComponent(sessionId)}`
+}
 
 /** Default upstream model, editable in the settings card. */
 export const DEFAULT_MODEL = 'gpt-image-2'
@@ -55,7 +93,8 @@ export const MAINTENANCE_API = {
 /**
  * Loopback bridge route opening one referenced image in the system's default
  * image viewer (the inline view's 本地打开 button). The host re-checks the
- * session's events — same authorization as ATTACHMENT_API — then copies the
+ * session's events — the same rule as the platform's own attachment route and
+ * as {@link IMAGEGEN_IMAGES_API} — then copies the
  * bytes to a host-side temp file and hands it to the OS opener; the browser
  * never gets the bytes or a path.
  */
@@ -96,40 +135,106 @@ export function envelopeRequestText(envelope: string): string | undefined {
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 /**
- * The content block the tool's render() emits per generated image. Its type is
- * deliberately NOT `image` — the model layer's image detection
- * (`contentHasImage`) only matches `type === 'image'` (or inside tool-result),
- * so this block is invisible to the image-capability check. Text-only adapters
- * (pi-ai UNSUPPORTED_CONTENT) and image-capable adapters both tolerate it: the
- * model only ever sees the accompanying text envelope. The UI renders these
- * inline through the keyed `tool.call.toolview` entry.
+ * One generated picture as the GUI learns about it: the platform's own
+ * `image` block supplies the attachment reference the session-authorized
+ * `loadImage` loader resolves, and this record adds the facts an `image` block
+ * cannot carry — the upload work-dir copy that is the model's edit handle, and
+ * the prompt/model/size captions.
+ *
+ * The tool persists these as `tool/result.data.meta` through
+ * `output.presentationMeta`, and the images manifest route
+ * ({@link IMAGEGEN_IMAGES_API}) serves the same records per call id.
  */
-export interface GeneratedImageBlock {
-  type: 'generated-image'
+export interface GeneratedImageRecord {
   /** Durable attachment reference produced by ctx.attachments.saveImage(). */
-  attachment: ImageAttachmentRef
-  /** The prompt that produced this image. */
+  attachmentId: string
+  mediaType: string
+  bytes: number
+  width: number
+  height: number
+  name?: string
+  /** Absolute path of the upload work-dir copy (the model's edit handle). */
+  path?: string
+}
+
+/**
+ * One generated picture plus the edit bytes the host serves for it: what the
+ * 修改 action stages as the session's pending reference, so the follow-up call
+ * gets exactly the image the model itself was handed.
+ */
+export interface GeneratedImageEdit extends GeneratedImageRecord {
+  /** Base64 of the image bytes (no data-URL prefix). */
+  data: string
+}
+
+/** Per-call metadata the tool persists as `tool/result.data.meta`. */
+export interface GeneratedImagesMeta {
   prompt: string
-  /** Upstream model name. */
-  model?: string
-  /** Requested size (e.g. "1024x1024"). */
-  size?: string
+  model: string
+  size: string
+  images: GeneratedImageRecord[]
+}
+
+/**
+ * Read {@link GeneratedImagesMeta} out of an untrusted value: the persisted
+ * `tool/result.data.meta`, or any object of the same shape. Returns undefined
+ * when the value is not that shape, so a view never throws on a foreign
+ * payload (a throw would abdicate the keyed toolview entry).
+ * @param value - candidate metadata (block.meta, an HTTP body, undefined).
+ * @returns the validated metadata, or undefined.
+ */
+export function generatedImagesMeta(value: unknown): GeneratedImagesMeta | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const candidate = value as Record<string, unknown>
+  if (!Array.isArray(candidate.images)) return undefined
+  const images: GeneratedImageRecord[] = []
+  for (const entry of candidate.images) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const image = entry as Record<string, unknown>
+    if (typeof image.attachmentId !== 'string' || image.attachmentId === '') continue
+    images.push({
+      attachmentId: image.attachmentId,
+      mediaType: typeof image.mediaType === 'string' ? image.mediaType : 'image/png',
+      bytes: typeof image.bytes === 'number' ? image.bytes : 0,
+      width: typeof image.width === 'number' ? image.width : 0,
+      height: typeof image.height === 'number' ? image.height : 0,
+      ...typeof image.name === 'string' && image.name !== '' ? { name: image.name } : {},
+      ...typeof image.path === 'string' && image.path !== '' ? { path: image.path } : {},
+    })
+  }
+  if (images.length === 0) return undefined
+  return {
+    prompt: typeof candidate.prompt === 'string' ? candidate.prompt : '',
+    model: typeof candidate.model === 'string' ? candidate.model : '',
+    size: typeof candidate.size === 'string' ? candidate.size : '',
+    images,
+  }
 }
 
 declare module '@deepseek-ai/dsh-llm/types' {
+  /**
+   * LEGACY, read-only. The upload bridge used to emit this plugin-private block
+   * as the leading block of the reference-image user message. Message adapters
+   * do NOT skip unknown block types: the strict DeepSeek Messages route refused
+   * the whole request (`UNSUPPORTED_CONTENT: cannot represent user/tool-result
+   * content uploaded-image`), and since that message is durable it poisoned
+   * every later turn of the session.
+   *
+   * The host now emits the platform's own `image` block instead, so nothing
+   * writes this type any more. It stays declared so images in sessions written
+   * BEFORE that fix still render in the bubble rather than dropping into the
+   * raw-JSON fallback.
+   */
   interface ContentBlockMap {
-    /** generated-image blocks render inline via the toolview; never reach the model. */
-    'generated-image': GeneratedImageBlock
-    /** uploaded-image blocks (text-model uploads) render inline via the shadowed user bubble; never reach the model. */
     'uploaded-image': UploadedImageBlock
   }
 }
 
 /**
- * The content block the host's upload bridge emits per text-model upload, as
- * the leading block of the user message it enqueues. Same model-safety story as
- * GeneratedImageBlock: never `image`, so text-only adapters tolerate it and the
- * UI renders it inline through the shadowed `user` node renderer.
+ * The retired upload block, still recognized for replay of older sessions.
+ *
+ * Do not emit it: it is plugin-private and therefore unrepresentable to every
+ * strict adapter. See the augmentation above for the failure it caused.
  */
 export interface UploadedImageBlock {
   type: 'uploaded-image'

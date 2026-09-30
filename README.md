@@ -6,6 +6,14 @@
 
 > **图生图说明**：带参考图的「图生图」请求走标准 OpenAI 兼容 **`/images/edits`**（multipart form-data），文生图走 `/images/generations`（JSON）。对接网关时需确认上游**两个接口都支持**——只实现 `generations` 的上游可以用文生图，但图生图会失败。
 
+> ### ⚠️ 只支持官方 DSH
+>
+> 本插件**只支持官方 DSH**，即 **DeepSeek Harness Desktop 的官方发行版**。
+>
+> 它直接依赖官方发行版内部的插件实现细节：`.volatile()` 配置表单契约与 `configForms` 服务、`slots` 座位表（含 `conversation.chat.turnTail` 这类轮次级座位）、客户端模块加载器（`window.__ModuleLoader__`、`react` / `react-dom` 由宿主提供）、`uiConversation` 的回合定义注册表，以及会话事件的 `image` 块与附件授权口径。这些**都不是公开稳定 API**，官方随时可能在版本之间改动。
+>
+> 因此：**不保证**兼容任何第三方分支、魔改版、旧版本，或其它 harness 实现；在这些环境里出现的加载失败、白屏、座位不渲染、`UNSUPPORTED_CONTENT` 一类问题，都不在本插件的支持范围内。请使用官方发行版，并保持其为官方更新通道上的版本。
+
 ![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 <img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/e5b19ba2-04b7-4b07-90e0-418475920856" />
@@ -24,9 +32,14 @@
   - 本地打开：走系统默认图片查看器，无需先下载再找文件
   - 修改：一键把这张图作为参考图，输入需求即可连续修改（图生图）
 - **网络自动重试** — 上游网络错误 / 超时 / 5xx 网关故障自动重试（指数退避，最多 3 次）；4xx 与参数错误不重试（重试无意义），重试耗尽后错误信息注明已重试次数
-- **双模型兼容** — 通过自定义 `generated-image` / `uploaded-image` 内容块展示图片，**模型侧永远看不到图片块**（`contentHasImage` 只匹配 `image` 块）：
-  - 纯文本输入模型：不会触发 `UNSUPPORTED_CONTENT`，生成后可以继续正常对话
-  - 图像输入模型：同样正常工作，无需任何配置
+- **适配器安全的内容块** — 生图结果只使用平台自己的 `image` 块（外加文本信封），**不再引入任何插件私有块类型**：
+  - 平台的消息适配器**不会跳过**未知块类型：DeepSeek Messages 适配器遇到不认识的块会直接让整个回合失败（`UNSUPPORTED_CONTENT: cannot represent user/tool-result content …`）。旧版用私有 `generated-image` 块渲染结果，正是「生成成功但回合报错」的根因
+  - `image` 块对纯文本模型是安全的：平台在派发前把每个 `image` 块替换成一段占位文本（`[image omitted because this model accepts text only; …]`）
+  - 因此纯文本输入模型与图像输入模型共用同一条链路，无需任何配置
+- **图片出现在最终回复里，而不是工具调用记录里** — 图片在两处渲染，各司其职：
+  - 回合进行中：`generate_image` 卡片内直接显示（此时工具组还在正文流里）
+  - 回合结束后：同一批图片由轮次级卡片渲染在**该回合收尾正文的下方、可折叠工具组的之外**（`conversation.chat.turnTail`），所以生成的图读起来是答案的一部分，而不是工具调用的细节。默认「紧凑」会话视图会把已结束回合的工具调用折叠进过程组，只有轮次级卡片能在折叠状态下依然可见
+  - 该卡片有两个数据来源：优先用客户端侧的 Turn Definition 折叠（零请求）；当它对本回合没有数据时（Definition 只看得见「注册之后」匹配到的事件，也可能有回合不在已加载窗口内）回退到宿主自己的 `GET /api/dsh-tool-imagegen/images?session=…`，由宿主从该会话**完整**日志里投影出「哪一回合的哪次调用产出了哪些图」
 - **上传参考图（用对话自带的附件按钮）** — 直接用输入框的**原生附件上传**（回形针）：图片作为平台原生 `image` 块进入会话，多模态模型可直接看图。插件**不再提供自己的上传按钮**（旧版为纯文本模型另做了一套「待发送暂存」通道，现已移除，避免输入框出现两个上传入口）。上传后让模型「基于这张图改…」即可，模型也可以直接用 `generate_image(image=<附件 id 或工作目录路径>)`。
 - **一键修改 / 连续修改** — 任何一张生成图都能点「修改」直接变成待发送参考图，输入需求发送后生成新图；对新图再点「修改」即可无限连续改。对两类模型同一机制
 - **模型直接图生图（无需手动上传）** — 每次生成的图片会自动在工作目录保存一份，信封把「参考图路径」告知模型；用户说「把这张图改成…」时模型直接用该路径调用 `generate_image(image=路径)`，无需点「修改」重新上传。路径仅用于工具参数，模型被明确禁止在回复中展示
@@ -36,8 +49,8 @@
 - **零配置迁移** — 插件行 id 就是旧插件用的设置命名空间 `dsh-imagegen`；旧 `settings.yaml` 里的 `dsh-imagegen:` 段由平台自带的迁移逻辑按行 id 自动折入，`apiUrl` / `apiKey` 无需手抄
 - **安全设计** —
   - API 密钥是 `role('secret')` 字段，只在宿主侧保存，平台在每次响应里结构化剥掉，浏览器永远拿不到原值、设置页不回显
-  - 附件桥、本地打开桥、上传桥、存储桥均为 **loopback 围栏**，仅本机浏览器可访问；配置走平台设置服务，非本机页面自动降级为只读且不出现卡片
-  - 附件桥按「会话事件里是否存在引用该附件的 `generated-image` 块」授权，与平台自身的附件授权模型一致；本地打开桥复用同一套授权
+  - 本地打开桥、上传桥、存储桥、生图图片路由均为 **loopback 围栏**，仅本机浏览器可访问；配置走平台设置服务，非本机页面自动降级为只读且不出现卡片
+  - 生图图片路由按「该会话自己的 `tool/result` 事件里是否存在引用这些图片的 `image` 块」授权，与平台自身的附件授权模型一致；本地打开桥复用同一套授权
 
 ## 快速开始
 
@@ -72,15 +85,21 @@
   │                    ctx.attachments.saveImage() 存入本机附件库
   │                              │
   │                              ▼
-  │              render() 产出 { type: 'generated-image', attachment, prompt, ... }
+  │              render() 产出文本信封 + 平台原生 image 块
+  │              （per-call 事实另存 presentationMeta → tool/result.data.meta）
   │                              │
   ▼                              ▼
-模型只看到随附的文本信封         客户端 keyed toolview 卡片
-（"已生成 1 张图片…"）            │
-                                 ▼
-                   <img src="/api/dsh-tool-imagegen/attachment?session=…&id=…">
-                   附件桥做会话引用检查后返回图片字节 → 内联显示
+模型只看到随附的文本信封         客户端两处渲染同一批图片：
+（"已生成 1 张图片…"）           ① 回合进行中 → generate_image 卡片（走平台会话授权
+                                 的 loadImage，与内置 read_image 卡片同一条路）
+                                 ② 回合结束后 → 轮次级卡片，位于收尾正文下方、
+                                 可折叠工具组之外（走插件自己的图片路由取字节）
 ```
+
+> 关于 `image` 块与纯文本模型：平台在把消息派发给模型前，会把每个 `image` 块替换为
+> `[image omitted because this model accepts text only; attachment sha256:…]`。
+> 所以结果里带 `image` 块不会让纯文本模型的回合失败 —— 而这正是旧版私有
+> `generated-image` 块出问题的地方（适配器不会跳过未知块，直接让整回合失败）。
 
 图生图 / 修改链路（参考图来源有两种，处理完全一致）：
 
@@ -90,7 +109,9 @@
   │
   ▼
 （来源 B）宿主上传桥：字节存入附件库 + 上传工作目录，向会话投递一条用户消息
-  [uploaded-image 块（模型不可见）+ 文字信封（含本机路径）]
+  [平台 image 块 + 文字信封（含本机路径）]
+  注：必须是平台自己的 image 块——私有块类型会让严格适配器拒绝整个请求，
+      而且这条消息是持久的，会让之后的回合接连失败（见「已知限制」）
   │
   ▼
 模型读到图片 / 信封 → 调用 generate_image 且 image=<路径 或 附件 id>
@@ -99,18 +120,20 @@
 引擎走 multipart POST /images/edits（model / prompt / image 文件）
   │
   ▼
-新图以 generated-image 块内联显示 —— 对新图再点「修改」→ 无限连续改
+新图以平台原生 image 块内联显示 —— 对新图再点「修改」→ 无限连续改
 ```
 
 三个关键设计：
 
-1. **`generated-image` / `uploaded-image` 块**（而非平台惯用的 `image` 块）
-   模型层的图片检测 `contentHasImage` 只匹配 `type: 'image'`，这两个自定义块对模型完全不可见 —— 这是 text-only 模型能安全使用（生成、上传、修改）的根本原因，也是两类模型共用同一套机制的原因。
+1. **插件只写入平台自己的块类型**
+   适配器**不会跳过**未知块类型：DeepSeek Messages 适配器遇到不认识的块会直接让整个回合失败（`UNSUPPORTED_CONTENT`）。所以生图结果 = 文本信封 + 平台 `image` 块；「修改」上传桥投递的参考图消息同样改用平台 `image` 块。纯文本模型由平台的投影逻辑替换为占位文本，图像模型直接看图，两类模型共用同一套机制。
+   （`uploaded-image` 只作为**只读遗留类型**保留：早期版本写过它，旧会话里仍可能出现，客户端继续把它渲染成图片而不是原始 JSON。）
 
-2. **插件自带 loopback 附件桥**
-   平台的附件授权（`referencedImage`）只扫描会话事件里的 `image` 块，而本插件出于上面第 1 点**故意不写 `image` 块**，所以图片字节由插件自己的桥提供：
-   `GET /api/dsh-tool-imagegen/attachment?session=<会话>&id=<附件ID>`
-   桥会重新扫描该会话的事件，确认存在引用此附件的 `generated-image` / `uploaded-image` 块才返回字节 —— 与平台授权同一套信任模型，只是换成了本插件的块类型。
+2. **图片字节的两条读取路径**
+   - 回合进行中的工具卡片：走**平台会话授权加载器**（`ToolCallOwnerProps.loadImage`，与内置 `read_image` 卡片同一条路），插件自身不提供字节；
+   - 回合结束后的轮次级卡片：该座位没有平台的会话授权加载器，改由插件自己的路由供字节
+     `GET /api/dsh-tool-imagegen/images?session=<会话>&call=<调用>&index=<序号>`
+     授权与平台同一套规则 —— 字节来自该调用的内存留存，或该会话自身 `tool/result` 事件里引用的那个附件，绝不会暴露会话未引用的对象。
 
 3. **工具 schema 使用完整 JSON Schema 形态**
    注册时 `parameters` 必须是对象根 schema（`{ type: 'object', properties, required }`），平台会原样投影进模型请求，上游网关对缺失 `type: 'object'` 的 schema 会直接拒绝。
@@ -152,7 +175,7 @@
 | 选了图片但没有上传 | 原生附件上传会立刻进入待发送区（回形针 → 缩略图）；生成图的「修改」是**待发送**设计，点了只暂存，必须输入消息一起发送 | 直接发送即可；「修改」暂存后输入需求再发送 |
 | 想上传参考图但找不到生图插件的上传按钮 | 新版**有意移除**了插件自带的上传按钮（纯文本模型时代的「待发送暂存」通道），改用输入框的原生附件上传，避免两个上传入口 | 直接用输入框的附件（回形针）按钮；多模态模型可直接看图，纯文本模型请改说「把这张图改成…」并让模型用工作目录路径（生成图点「修改」也仍走插件自己的暂存通道） |
 | 生图卡片显示破图（一个加载失败的小图标 + 提示词文字），没有图片 | 旧版桥读取 `session.events`；DSH 2.0.10 的会话服务把事件日志改为私有（`snapshotEvents()` / `ownEvents()`），`session.events` 是 `undefined`，桥内直接抛 `TypeError: events is not iterable`，请求 500 | 升级插件到最新版（`lib/session-events.js` 兼容两种会话 API，并加回归测试 `test-session-events.mjs`），**完全重启** DSH |
-| 生图卡片显示 `session/attachment-invalid: Image is not referenced by this session.` | 卡片取图函数名 `loadImage` 与平台 owner props 重名，被覆盖后走了平台授权（平台只认 `image` 块） | 升级插件到最新版（字段改名 `bridgeImageUrl`）；刷新页面即可 |
+| 生成成功但回合报错 `UNSUPPORTED_CONTENT: cannot represent user/tool-result content generated-image` | 旧版把结果写成插件私有 `generated-image` 块；适配器不会跳过未知块，直接让整回合失败 | 升级插件到最新版（结果改用平台 `image` 块）；**重启 DSH** 让宿主侧新代码生效 |
 | 修改已生成图时气泡里出现 `【dsh-imagegen】…` 长段说明文字 + 「附加内容块」JSON | 旧版气泡渲染器按名导入了 primitives 的 `MessageText`；DSH 2.0.10 已移除该导出 → `undefined` → React error #130 → 遮蔽项被 slot 层 abdicate，永久回退平台原生气泡 | 升级到最新版：所有 primitives 改为防御式解析 + 内联兜底（缺组件也不会崩溃），用户文本纯文本渲染；刷新页面即可 |
 | 生成图收进可折叠的通用工具行（要点开才见） | 工具视图对调用块形状判断失败而崩溃，keyed 视图被剔除回退到通用卡片 | 升级到新版：工具视图兼容 `content` 与嵌套 `result.content` 两种块形态，任何形状都不会崩溃回退 |
 | 生成图超过 5MB 无法点「修改」 | 平台附件上限 5MB | 换小尺寸重试（`1024x1024` 通常 <5MB）；这是平台硬限制 |
@@ -170,15 +193,17 @@ dsh-tool-imagegen/
 ├── lib/                        # 宿主侧（Node ESM）
 │   ├── index.js                # 插件入口：Config schema、工具注册、各桥挂载
 │   ├── engine.js               # 上游调用：/images/generations + /images/edits（含自动重试）
-│   ├── routes.js               # 附件 / 上传 / 能力 / 存储 / 本地打开 桥（loopback 围栏）
+│   ├── routes.js               # 生图图片路由 + 上传 / 能力 / 存储 / 本地打开 桥（loopback 围栏）
 │   ├── maintenance.js          # 孤儿文件收集与清理（含 zstd 持久化会话扫描）
 │   ├── session-events.js       # 会话事件读取（兼容旧 events 数组与新 snapshotEvents API）
 │   ├── uploads.js              # 上传工作目录管理
 │   ├── protocol.js             # 与客户端共享的路径/命名空间常量
 │   └── client.js               # 预构建客户端 bundle（提交以便克隆即用）
 ├── src/client/                 # 客户端（浏览器侧，rolldown 打包）
-│   ├── index.ts                # 入口：设置卡片 + toolview + sendSession 包装（无自定义上传按钮）
-│   ├── GenerateImageView.tsx   # 内联图片卡片（全屏查看 / 修改 / 下载 / 本地打开）
+│   ├── index.ts                # 入口：设置卡片 + toolview + 轮次级卡片 + sendSession 包装
+│   ├── GenerateImageView.tsx   # 回合进行中的工具卡片（含图片与四个操作）+ 复用的画廊组件
+│   ├── GeneratedTurnTail.tsx   # 轮次级卡片：收尾正文下方、工具组之外渲染同一批图片
+│   ├── turn-definition.ts      # Turn Definition：从持久化会话事件折叠出每回合的生图结果
 │   ├── UploadedImageBubble.tsx # 「修改」暂存图片的用户气泡渲染
 │   ├── MaintenanceCard.tsx     # 设置卡内嵌的存储清理区块
 │   ├── SettingsCard.tsx        # 设置卡片（plugins.item 槽）
@@ -190,11 +215,11 @@ dsh-tool-imagegen/
 ├── locale/                     # 插件管理页展示元数据（en/zh 标题与简介）
 ├── build-client.mjs            # 客户端构建脚本
 ├── check-profile.mjs           # 校验 profile 指向本目录 + 包满足平台的启动契约
-├── smoke-client.mjs            # 客户端冒烟测试（含 plugins.item 的 view 契约）
-├── test-settings.mjs           # 设置契约测试（volatile 字段集、密钥、实时读取、schema 重建）
+├── smoke-client.mjs            # 客户端冒烟测试（含 Turn Definition 折叠与轮次级卡片渲染）
+├── test-settings.mjs           # 设置契约 + 工具结果块类型（无插件私有块）
 ├── test-engine.mjs             # 引擎测试（请求形态 + 重试）
 ├── test-maintenance.mjs        # 存储清理测试
-├── test-session-events.mjs     # 会话事件兼容 + 附件桥授权测试
+├── test-session-events.mjs     # 会话事件兼容 + 生图图片路由授权/字节测试
 ├── test-routes-open.mjs        # 本地打开桥临时文件命名测试
 └── cordis.patch.yml            # profile bundle 注册补丁（行 id = dsh-imagegen = 设置命名空间）
 ```
@@ -204,7 +229,7 @@ dsh-tool-imagegen/
 ```bash
 # 宿主侧改动（CI 同样会跑这几套，Node 22）
 node test-settings.mjs && node test-engine.mjs && node test-maintenance.mjs \
-  && node test-routes-open.mjs && node test-session-events.mjs
+  && node test-routes-open.mjs && node test-session-events.mjs && node test-upload.mjs
 
 # 客户端改动：重建 + 冒烟（CI 会 diff lib/client.js，忘记重建会红）
 node build-client.mjs && node smoke-client.mjs
@@ -216,9 +241,20 @@ node check-profile.mjs
 # （若是从 tarball / npm 装的拷贝，则要重新 add 覆盖。）
 ```
 
+## 已知限制
+
+- **插件不再写入任何私有内容块**（历史遗留会话除外）。上传桥过去把「修改」参考图写成插件私有
+  `uploaded-image` 块，而平台的消息适配器不会跳过未知块类型——严格路由（DeepSeek Messages）会直接
+  拒绝整个请求：`UNSUPPORTED_CONTENT: cannot represent user/tool-result content uploaded-image`。
+  由于那条用户消息是持久的，凡是模型可见历史里仍包含它的回合都会同样失败。现在上传桥改用平台自己的
+  `image` 块：图片能力模型直接看图，纯文本模型由平台的投影替换成占位文本，而旁边的文字信封照旧携带
+  工作目录路径。`uploaded-image` 只作为「只读遗留类型」保留，用于让旧会话里的图片仍能正常渲染。
+- **轮次级卡片只在回合结束后出现**：`conversation.chat.turnTail` 座位只对已完成的回合存在。
+  回合进行中的图片由 `generate_image` 工具卡片显示；若回合被中断且没有收尾节点，图片仍留在工具卡片里。
+
 ## 兼容性
 
-- 目标客户端：**DSH Desktop 0.2.0-rc.2 及更新**（`.volatile()` 配置字段 + `configForms` + `plugins.item` 契约）。
+- 目标客户端：**官方 DSH Desktop 0.2.0-rc.2 及更新**（本插件只支持官方发行版，见页首「⚠️ 只支持官方 DSH」）。
 - 插件以 `link:` 装在 `C:\Users\CJX\.dsh\profiles\desktop`，行 id `dsh-imagegen`。
 - 唯一运行时依赖：`@deepseek-ai/schemastery`（`Config` schema 用；其余 `@deepseek-ai/dsh-*` 服务由宿主提供，客户端用到的都是平台 seed 模块或 cordis 服务）。
 - 不依赖旧插件 `@dickpy/dsh-imagegen`（已彻底移除；行 id / 设置命名空间 `dsh-imagegen` 保留以自动继承旧配置）。

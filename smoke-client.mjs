@@ -64,6 +64,9 @@ const externals = {
     jsxDEV: (type, props) => ({ type, props }),
   },
   '@deepseek-ai/dsh-client-store': { createSnapshotStore: snapshotStore },
+  // The fullscreen viewers portal into document.body; the platform serves
+  // react-dom the same way it serves react.
+  'react-dom': { createPortal: (node) => node },
   // Only touched at component-render time; the current-build names are supplied
   // so the bubble's defensive lookups resolve to real components.
   '@deepseek-ai/dsh-client-ui-primitives': {
@@ -183,6 +186,15 @@ const conversationStub = {
   calls: [],
 }
 
+// The conversation event registry: captures the Turn Definitions the plugin
+// registers, so the fold can be driven directly with synthetic events.
+const definitions = []
+const uiConversation = {
+  events: {
+    register(definition) { definitions.push(definition); return () => {} },
+  },
+}
+
 const ctx = {
   effect(fn) { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
   locale: {
@@ -193,6 +205,7 @@ const ctx = {
     if (name === 'connection') return { isLoopback: true }
     if (name === 'conversation') return conversationStub
     if (name === 'configForms') return configForms
+    if (name === 'uiConversation') return uiConversation
     return undefined
   },
   on() { return () => {} },
@@ -252,18 +265,137 @@ try {
   check('page exposes save/discard through the injected actions', cardProps.save !== undefined && cardProps.discard !== undefined)
 
   check('tool.call.toolview registered keyed by generate_image', toolview !== undefined && toolview.key === 'generate_image')
-  check('toolview inject returns a bridgeImageUrl face', typeof toolview?.inject?.()?.bridgeImageUrl === 'function')
   const toolFace = toolview?.inject?.('session-1')
-  // The face must NOT reuse the owner prop name: the slot renderer spreads
-  // owner props last, and `tool.call.toolview` owner props already carry a
-  // platform `loadImage`, which would shadow the bridge (session/attachment-invalid).
+  // The pictures are the platform's own `image` blocks, so the view resolves
+  // them through the OWNER's session-authorized `loadImage`. Injecting a face
+  // field of that name would be shadowed by the owner prop (spread last) and
+  // silently redirect every image through the plugin — so the face must not
+  // declare it, and must not ship image bytes itself.
   check('toolview face does not shadow the owner loadImage prop', toolFace?.loadImage === undefined)
-  const bridge = toolFace?.bridgeImageUrl?.({ attachmentId: 'att-42' })
-  check('bridgeImageUrl returns a thenable bridge URL', typeof bridge?.then === 'function')
-  check('bridge URL carries session and id', source.includes('dsh-tool-imagegen/attachment') && source.includes('encodeURIComponent(attachment.attachmentId)'))
   check('toolview face carries openLocally', typeof toolFace?.openLocally === 'function')
   check('openLocally posts to the local-open bridge', source.includes('dsh-tool-imagegen/open'))
   check('toolview face carries stageEdit (modify button)', typeof toolFace?.stageEdit === 'function')
+  check('toolview face carries the manifest fallbacks (loadImagesMeta + loadEditBytes)',
+    typeof toolFace?.loadImagesMeta === 'function' && typeof toolFace?.loadEditBytes === 'function')
+  check('the manifest route replaces the retired byte bridge',
+    source.includes('dsh-tool-imagegen/images') && !source.includes('dsh-tool-imagegen/attachment'))
+  // Fullscreen viewer: portaled to document.body. An in-place `position: fixed`
+  // overlay can be trapped by an ancestor's containing/stacking block (the
+  // transcript's process disclosure + scroll container), which is why the
+  // 全屏查看 button appeared to do nothing.
+  check('the fullscreen viewer portals into document.body',
+    source.includes('createPortal') && source.includes('react-dom'))
+
+  // --- Turn-level card (the picture must survive the collapsed tool group) ---
+  //
+  // The default compact transcript folds a closed Turn's tool calls into a
+  // collapsible process group, so a picture rendered only inside the tool card
+  // disappears from the reading flow. The shipped answer is a Turn Definition
+  // (ctx.uiConversation.events) plus ui-chat's `conversation.chat.turnTail`
+  // list seat, which renders beneath the closing prose and outside that group
+  // — the same two registrations ui-schedule's `schedule_create` card and
+  // ui-deliverables' changed-files card use.
+  const turnTail = registrations.find((r) => r.name === 'conversation.chat.turnTail')
+  check('conversation.chat.turnTail entry registered', turnTail !== undefined)
+  check('the Turn-tail entry is keyed by the definition kind',
+    turnTail?.id === 'imagegen-generated')
+  check('the Turn-tail entry is a list entry with an order',
+    typeof turnTail?.order === 'number')
+  check('the Turn-tail entry injects the shared per-session face',
+    typeof turnTail?.inject?.('session-1')?.loadImagesMeta === 'function')
+  check('the definition registers under its kind',
+    definitions.length === 1 && definitions[0]?.kind === 'imagegen-generated')
+
+  // Drive the fold the way the registry does: turn/start opens the state, and
+  // the call's own tool/call + tool/result settle it.
+  const definition = definitions[0]
+  const ATTACHMENT = { attachmentId: 'sha256:aa11', mediaType: 'image/png', bytes: 4, width: 2, height: 2, name: 'generated-1.png' }
+  const events = [
+    { type: 'turn/start', seq: 10, data: { turn: 3 } },
+    { type: 'tool/call', seq: 11, data: { turn: 3, callId: 'call_1', name: 'generate_image', arguments: '{"prompt":"一只猫"}' } },
+    {
+      type: 'tool/result',
+      seq: 12,
+      data: {
+        turn: 3,
+        message: {
+          toolCallId: 'call_1',
+          content: [
+            { type: 'text', text: '已生成 1 张图片' },
+            { type: 'image', attachment: ATTACHMENT },
+          ],
+        },
+      },
+    },
+  ]
+  let state
+  for (const event of events) {
+    const match = definition.match(event)
+    if (match === null) continue
+    state = match.role === 'start'
+      ? definition.start({}, match)
+      : definition.update({ state }, match)
+  }
+  check('the fold keeps one settled call for the Turn',
+    state?.calls?.length === 1 && state.calls[0].callId === 'call_1')
+  check('the fold keeps the picture with its durable reference',
+    state?.calls?.[0]?.images?.[0]?.attachmentId === 'sha256:aa11')
+  check('the fold reads the prompt off the call arguments',
+    state?.calls?.[0]?.prompt === '一只猫')
+  check('the fold records the settlement sequence',
+    state?.calls?.[0]?.seq === 12)
+
+  // A Turn that generated nothing must contribute nothing: the seat is shared
+  // with the platform's other Turn-level artifacts.
+  const quiet = definition.match({ type: 'tool/result', seq: 20, data: { turn: 4, message: { toolCallId: 'call_2', content: [{ type: 'text', text: 'no picture' }] } } })
+  const quietState = definition.update(
+    { state: { turn: 4, calls: [], callsByName: new Map() } },
+    quiet,
+  )
+  check('a result without picture blocks folds to no call', quietState.calls.length === 0)
+  check('an unrelated event is not matched',
+    definition.match({ type: 'session/meta', seq: 21, data: { turn: 4 } }) === null)
+
+  // Render the seat the way ui-chat does: the closing Turn's folded data plus
+  // the injected face. A Turn that generated nothing MUST return null — the
+  // seat is shared with the platform's other Turn-level artifacts, so an empty
+  // contribution would add a blank row beneath every reply.
+  const tailFace = turnTail.inject('session-1')
+  const ownerOf = (data, endSeq) => ({
+    turn: { data: { get: (kind) => (kind === 'imagegen-generated' ? data : undefined) }, end: { seq: endSeq } },
+    seq: endSeq,
+    sessionId: 'session-1',
+    t: (key) => `t:${key}`,
+    ...tailFace,
+  })
+  const tree = turnTail.component(ownerOf(state, 12))
+  check('the Turn-tail card renders the picture rows', tree !== null && tree !== undefined)
+  // The stub jsx does not recurse into child function components, so render the
+  // gallery one level deeper and assert its own wrapper.
+  const gallery = typeof tree?.type === 'function' ? tree.type(tree.props) : undefined
+  check('the rendered rows carry the plugin-owned gallery class',
+    String(gallery?.props?.className ?? '').includes('turnTail'))
+  check('the gallery renders one row per settled picture',
+    Array.isArray(gallery?.props?.children) && gallery.props.children.length >= 1)
+  check('a Turn that generated nothing renders nothing',
+    turnTail.component(ownerOf({ turn: 4, calls: [], callsByName: new Map() }, 20)) === null)
+  check('a Turn whose settlement lands after its end renders nothing',
+    turnTail.component(ownerOf(state, 11)) === null)
+  check('a missing session id declines the card',
+    turnTail.component({ ...ownerOf(state, 12), sessionId: undefined }) === null)
+  check('an unexpected Turn shape declines instead of throwing',
+    turnTail.component({ ...tailFace, t: (key) => `t:${key}`, turn: undefined }) === null)
+  // The tail has no session-authorized loader among its owner props, so its
+  // pictures must come from the plugin's own authorized byte route.
+  check('the tail card reads bytes from the plugin route (index mode)',
+    source.includes('index=') && source.includes('dsh-tool-imagegen/images'))
+  // Two data sources: the client-side fold, and the host's per-Turn projection
+  // for Turns that fold cannot cover. The stub's noop useEffect cannot drive an
+  // async fallback, so this pins the wiring instead of the transition.
+  check('the tail card can fall back to the host per-Turn projection',
+    source.includes('loadTurnImages') && source.includes('generatedTurnsUrl'))
+  check('the shared face carries the per-Turn projection loader',
+    typeof toolFace?.loadTurnImages === 'function')
   // Primitive drift guard: DSH 2.0.10 dropped `MessageText` from
   // @deepseek-ai/dsh-client-ui-primitives. Importing it by name yields
   // `undefined`, rendering it throws React error #130, and that crash ABDICATES

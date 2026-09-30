@@ -30,6 +30,7 @@ jobs:
           && node test-maintenance.mjs
           && node test-routes-open.mjs
           && node test-session-events.mjs
+          && node test-upload.mjs
 
       - name: Build client bundle
         run: node build-client.mjs

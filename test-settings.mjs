@@ -173,6 +173,52 @@ check('the always-on parameters are advertised',
 check('parameters is a full object-rooted JSON Schema',
   first.parameters.type === 'object' && Array.isArray(first.parameters.required))
 
+// The bug this pins: the tool used to render plugin-private `generated-image`
+// blocks. A block type outside DSH's ContentBlockMap is not skipped by every
+// adapter — the DeepSeek Messages route failed the whole turn with
+// `UNSUPPORTED_CONTENT: cannot represent user/tool-result content
+// generated-image`. The result must therefore carry only text and the
+// platform's own `image` blocks, with the client-only facts in presentationMeta.
+{
+  const value = {
+    prompt: '一只猫',
+    model: 'gpt-image-2',
+    size: '1024x1024',
+    images: [{
+      attachmentId: 'sha256:deadbeef',
+      mediaType: 'image/png',
+      bytes: 12,
+      width: 4,
+      height: 4,
+      name: 'generated-1.png',
+      path: 'C:\\work\\generated-1.png',
+    }],
+  }
+  const content = first.output.render({}, value)
+  const types = content.map((block) => block.type)
+  check('render() emits no plugin-private content block',
+    types.every((type) => type === 'text' || type === 'image'), `types=${types.join(',')}`)
+  check('render() emits the picture as a native image block',
+    types.filter((type) => type === 'image').length === 1)
+  const image = content.find((block) => block.type === 'image')
+  check('the image block carries the durable attachment reference',
+    image.attachment.attachmentId === 'sha256:deadbeef'
+      && image.attachment.bytes === 12
+      && image.attachment.width === 4)
+  check('the text envelope still names the work-dir edit handle',
+    content.some((block) => block.type === 'text' && block.text.includes('generated-1.png')))
+  check('presentationMeta publishes the client-only facts',
+    typeof first.output.presentationMeta === 'function')
+  const meta = first.output.presentationMeta({}, value)
+  check('presentationMeta carries the captions and the work-dir path',
+    meta.prompt === '一只猫'
+      && meta.model === 'gpt-image-2'
+      && meta.size === '1024x1024'
+      && meta.images[0].path === 'C:\\work\\generated-1.png')
+  check('presentationMeta stays model-invisible (not part of the content)',
+    content.every((block) => block.path === undefined && block.prompt === undefined))
+}
+
 // Turn the quality switch on the way the settings form does, then let the loader
 // commit the volatile update: the schema must be rebuilt with the new parameter.
 config.quality_enabled[VOLATILE_WRITE](true)

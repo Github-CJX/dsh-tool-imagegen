@@ -7,12 +7,14 @@
  * module.exports` / `return module.exports` shape so the loader can read the
  * plugin's `{ apply, inject }`.
  *
- * externals: `react` / `react/jsx-runtime` and every `@deepseek-ai/*` specifier
- * stay as `require(...)` calls — the loader resolves them (platform seed words
- * or registered factories). CSS Modules are intercepted by a custom plugin and
- * compiled to scoped class maps + a self-injecting <style> tag, exactly the
- * platform's inline-CSS pattern — rolldown's native CSS pipeline is never
- * touched (its virtual ids end in `.css` and broke the loader).
+ * externals: `react` / `react-dom` / `react/jsx-runtime` and every
+ * `@deepseek-ai/*` specifier stay as `require(...)` calls — the loader resolves
+ * them (platform seed words or registered factories), so `react-dom` must stay
+ * external too: the platform's own client bundles `require("react-dom")` for
+ * `createPortal`. CSS Modules are intercepted by a custom plugin and compiled to
+ * scoped class maps + a self-injecting <style> tag, exactly the platform's
+ * inline-CSS pattern — rolldown's native CSS pipeline is never touched (its
+ * virtual ids end in `.css` and broke the loader).
  */
 
 import { readFileSync } from 'node:fs'
@@ -115,7 +117,7 @@ const buildResult = await build({
   input: resolve(ROOT, 'src/client/index.ts'),
   plugins: [cssModulePlugin()],
   external(id) {
-    return id === 'react' || id === 'react/jsx-runtime' || id.startsWith('@deepseek-ai/')
+    return id === 'react' || id === 'react-dom' || id === 'react/jsx-runtime' || id.startsWith('@deepseek-ai/')
   },
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.jsx'],

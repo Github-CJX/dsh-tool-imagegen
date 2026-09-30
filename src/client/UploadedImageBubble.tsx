@@ -28,6 +28,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Namespace import on purpose: this package's named exports drift between DSH
 // releases (2.0.10 replaced `MessageText` with a `projectUserText` that returns
@@ -39,7 +40,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import * as primitivesModule from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import { ATTACHMENT_API, envelopeRequestText, UPLOAD_ENVELOPE_PREFIX, type UploadedImageBlock } from './protocol.ts'
+import { envelopeRequestText, UPLOAD_ENVELOPE_PREFIX, type UploadedImageBlock } from './protocol.ts'
 import css from './uploaded-image-bubble.module.css'
 
 /** Defensive primitive lookup: an absent export degrades to a fallback, never throws. */
@@ -283,7 +284,14 @@ function BubbleImage(props: {
   return <span className={css.stateLine}>{t('image.loading')}</span>
 }
 
-/** Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes. */
+/**
+ * Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes.
+ *
+ * Portaled to `document.body` for the same reason the generated-image viewer
+ * is: the bubble sits inside the transcript's scroll container, where an
+ * in-place `position: fixed` overlay can be trapped by an ancestor's stacking
+ * or containing block and never appear above the page.
+ */
 function BubbleLightbox(props: { url: string; name: string; closeLabel: string; onClose: () => void }) {
   const { url, name, closeLabel, onClose } = props
   useEffect(() => {
@@ -291,10 +299,16 @@ function BubbleLightbox(props: { url: string; name: string; closeLabel: string; 
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+    }
   }, [onClose])
-  return (
-    <div className={css.lightbox} role="dialog" aria-label={name} onClick={onClose}>
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div className={css.lightbox} role="dialog" aria-modal="true" aria-label={name} onClick={onClose}>
       <button type="button" className={css.lightboxClose} aria-label={closeLabel} onClick={onClose}>✕</button>
       <img
         className={css.lightboxImg}
@@ -302,7 +316,8 @@ function BubbleLightbox(props: { url: string; name: string; closeLabel: string; 
         alt={name}
         onClick={(event) => event.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -359,22 +374,18 @@ export const UploadedImageBubble = memo(function UploadedImageBubble(props: Uplo
   const text = texts.join('')
   const showBubble = text !== '' || rest.length > 0
 
-  const imageIds = useMemo(
-    () => new Set(images.map(attachment => String(attachment.attachmentId))),
-    [images],
+  // Every image — the platform's own `image` block or this plugin's
+  // `uploaded-image` block — resolves through the loader the chat-node owner
+  // supplies. Both block types carry a durable attachment reference that the
+  // session log authorizes, so one loader covers both and the plugin never
+  // serves bytes itself.
+  const load = useCallback(
+    (attachment: ImageAttachmentRef) => Promise.resolve(loadImage(attachment)).then((url) => {
+      if (typeof url !== 'string' || url === '') throw new Error('图片地址不可用（会话未授权该附件）')
+      return url
+    }),
+    [loadImage],
   )
-
-  // Per-attachment URL resolution: plugin uploads are deterministic bridge
-  // URLs (only when a session id is actually present); everything else defers
-  // to the platform loader.
-  const load = useCallback((attachment: ImageAttachmentRef) => {
-    if (typeof sessionId === 'string' && sessionId !== '' && imageIds.has(String(attachment.attachmentId))) {
-      return Promise.resolve(
-        `${ATTACHMENT_API.path}?session=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(String(attachment.attachmentId))}`,
-      )
-    }
-    return loadImage(attachment)
-  }, [imageIds, sessionId, loadImage])
 
   const clock = useMemo(() => formatClock(time, t), [time, t])
   const truncated = useCallback((total: number) => t('json.truncated', { total }), [t])

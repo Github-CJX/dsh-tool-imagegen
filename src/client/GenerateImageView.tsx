@@ -4,11 +4,12 @@
  * keyed, it REPLACES the generic tool row for generate_image calls — so this
  * view must cover running, settled, and error states itself.
  *
- * The model never sees an `image` block from this tool (the render() output is
- * `generated-image` blocks, which the image-capability check ignores), so this
- * view is the ONLY place the pictures surface: it resolves each durable
- * attachment to a browser URL through the conversation service and renders
- * `<img>` inline.
+ * How the pictures reach the browser: the tool result carries the platform's
+ * OWN `image` blocks, so this view resolves them through the session-authorized
+ * `loadImage` loader the slot owner hands every atomic tool view
+ * (`ToolCallOwnerProps.loadImage`) — never through a plugin route of its own.
+ * That is the same path the shipped `read_image` card takes, and it is what
+ * makes the picture durable across reloads.
  *
  * Display style: the shipped tool-card chrome (header row + padded body, image
  * capped at 480px tall and centered in a full-width frame, hover actions pinned
@@ -18,35 +19,42 @@
  * images.
  *
  * The current DSH chat (default "compact" transcript view) folds a closed
- * turn's tool calls into a process disclosure that starts collapsed, hiding
- * the image until the user expands it — this view auto-opens that disclosure
- * so the image is always visible without extra interaction (see the observer
- * in {@link GenerateImageView}).
+ * turn's tool calls into a process disclosure that starts collapsed. That is
+ * why the pictures ALSO render at the Turn tail, outside the group, through
+ * {@link GeneratedTurnTail} — this card covers the open Turn (where the group
+ * is still in the flow) and the per-call actions.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { GeneratedImageBlock } from './protocol.ts'
+import { generatedImagesMeta, type GeneratedImageEdit, type GeneratedImageRecord, type GeneratedImagesMeta } from './protocol.ts'
+import type { GeneratedTurnCall } from './turn-definition.ts'
 import type { ImageGenLocaleKey } from './locales.ts'
 import css from './generate-image-view.module.css'
 
+/**
+ * Resolve one durable attachment to a browser URL through the loader the slot
+ * owner supplies. The loader is synchronous in some builds and returns a
+ * promise in others; both are accepted, and a `null`/`undefined` result is
+ * reported as a failure rather than rendering a broken `<img>`.
+ * @param loadImage - the session-authorized loader from the owner props.
+ * @param attachment - the durable reference to resolve.
+ * @returns the displayable URL.
+ */
+async function resolveImageUrl(
+  loadImage: (image: ImageAttachmentRef) => string | undefined | null | Promise<string | undefined | null>,
+  attachment: ImageAttachmentRef,
+): Promise<string> {
+  const url = await loadImage(attachment)
+  if (typeof url !== 'string' || url === '') throw new Error('图片地址不可用（会话未授权该附件）')
+  return url
+}
+
 /** The registrant-side face the toolview entry injects (per session occurrence). */
 export interface GenerateImageViewFace {
-  /**
-   * Resolve one durable attachment to a browser URL. Served by the plugin's
-   * own loopback attachment bridge (the conversation service's resolveImage
-   * only authorizes `image` blocks, which this plugin never writes).
-   *
-   * NOT named `loadImage`: the slot renderer composes an entry as
-   * `{...kit, ...injected, ...ownerProps}` — owner props win — and the
-   * `tool.call.toolview` owner share already carries a platform `loadImage`
-   * (the session-authorized loader). A face field of that name is silently
-   * shadowed, so the view would resolve through the platform route and fail
-   * with `session/attachment-invalid` for every `generated-image` block.
-   */
-  bridgeImageUrl: (attachment: ImageAttachmentRef) => Promise<string>
   /**
    * Ask the host to open one image in the system's default image viewer: the
    * host re-checks the session reference, copies the bytes to a temp file,
@@ -59,10 +67,30 @@ export interface GenerateImageViewFace {
    * per-session draft store the composer upload button writes. The user then
    * types a modification request and sends; the sendSession wrapper submits
    * image + text through the upload bridge, and the model edits the picture
-   * via generate_image (the envelope carries the work-dir path). Works for
-   * text-only and image-capable models alike.
+   * via generate_image (the envelope carries the work-dir path).
    */
-  stageEdit: (attachment: ImageAttachmentRef) => Promise<void>
+  stageEdit: (image: GeneratedImageEdit, callId: string) => Promise<void>
+  /**
+   * Read the metadata the tool persisted for one settled call from the plugin's
+   * loopback manifest route, which answers with the same records plus the exact
+   * image bytes (base64) the model was handed as its edit handle. Used only as
+   * a fallback: a build that delivers no `block.meta` still renders its pictures
+   * (they come from the result's native `image` blocks) and recovers the
+   * captions, work-dir handles and edit bytes from here.
+   */
+  loadImagesMeta: (callId: string) => Promise<GeneratedImagesMeta | undefined>
+  /**
+   * Read the edit bytes of one generated image (base64) for staging a
+   * follow-up: the host serves the exact bytes it handed the model.
+   */
+  loadEditBytes: (attachmentId: string, callId: string) => Promise<string | undefined>
+  /**
+   * Read this session's whole generated-image projection grouped by Turn, from
+   * the host's own durable log. It is the Turn-level card's fallback for Turns
+   * the client-side fold cannot cover (folded before the Definition registered,
+   * or outside the loaded window); the toolview itself never needs it.
+   */
+  loadTurnImages: () => Promise<Record<number, GeneratedTurnCall[]>>
 }
 
 /** Props the composed toolview receives. */
@@ -71,9 +99,16 @@ export type GenerateImageViewProps =
   & PropsLocale<'dsh-imagegen'>
   & GenerateImageViewFace
 
-/** Narrow the settled content to this plugin's generated-image blocks. */
-function generatedImageBlocks(content: readonly ContentBlock[]): GeneratedImageBlock[] {
-  return content.filter((block): block is GeneratedImageBlock => block !== null && typeof block === 'object' && 'type' in block && block.type === 'generated-image')
+/** The attachment reference one metadata record describes. */
+export function attachmentOf(image: GeneratedImageRecord): ImageAttachmentRef {
+  return {
+    attachmentId: image.attachmentId,
+    mediaType: image.mediaType,
+    bytes: image.bytes,
+    width: image.width,
+    height: image.height,
+    ...image.name === undefined ? {} : { name: image.name },
+  }
 }
 
 /** Text blocks in the settled content (used as the error/summary envelope). */
@@ -81,6 +116,22 @@ function textBlocks(content: readonly ContentBlock[]): string[] {
   return content
     .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block !== null && typeof block === 'object' && 'type' in block && block.type === 'text' && typeof block.text === 'string')
     .map(block => block.text)
+}
+
+/**
+ * Read the durable `image` attachment references off the settled content, in
+ * block order. These are the platform's own blocks (the tool renders them), so
+ * the loader the slot owner supplies can resolve every one of them.
+ */
+function imageAttachments(content: readonly ContentBlock[]): ImageAttachmentRef[] {
+  const refs: ImageAttachmentRef[] = []
+  for (const block of content) {
+    if (block === null || typeof block !== 'object' || !('type' in block) || block.type !== 'image') continue
+    const ref = (block as { attachment?: unknown }).attachment
+    if (ref === null || typeof ref !== 'object') continue
+    refs.push(ref as ImageAttachmentRef)
+  }
+  return refs
 }
 
 /**
@@ -97,6 +148,34 @@ function settledContentOf(block: unknown): readonly ContentBlock[] | undefined {
   if (candidate.result !== null && typeof candidate.result === 'object') {
     const result = candidate.result as Record<string, unknown>
     if (Array.isArray(result.content)) return result.content as ContentBlock[]
+  }
+  return undefined
+}
+
+/**
+ * Read the metadata the tool persisted for this call (`tool/result.data.meta`)
+ * off either block form. Absent metadata is not an error: the pictures come
+ * from the content's `image` blocks, so the view falls back to the manifest
+ * route for the captions and work-dir handles.
+ */
+function settledMetaOf(block: unknown): GeneratedImagesMeta | undefined {
+  if (block === null || typeof block !== 'object') return undefined
+  const direct = generatedImagesMeta((block as Record<string, unknown>).meta)
+  if (direct !== undefined) return direct
+  const result = (block as Record<string, unknown>).result
+  if (result === null || typeof result !== 'object') return undefined
+  return generatedImagesMeta((result as Record<string, unknown>).meta)
+}
+
+/** Read the call id off either block form (the manifest route key). */
+function callIdOf(block: unknown): string | undefined {
+  if (block === null || typeof block !== 'object') return undefined
+  const candidate = block as Record<string, unknown>
+  if (typeof candidate.callId === 'string' && candidate.callId !== '') return candidate.callId
+  const call = candidate.call
+  if (call !== null && typeof call === 'object') {
+    const id = (call as Record<string, unknown>).callId ?? (call as Record<string, unknown>).id
+    if (typeof id === 'string' && id !== '') return id
   }
   return undefined
 }
@@ -131,7 +210,7 @@ function promptFromArgs(block: unknown): string | undefined {
 
 /**
  * Render the generate_image call inline.
- * @param props - the tool call's owner share, the locale seat, and bridgeImageUrl.
+ * @param props - the tool call's owner share, the locale seat, and the bridge faces.
  * @returns the inline card.
  */
 export function GenerateImageView(props: GenerateImageViewProps) {
@@ -143,53 +222,48 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   // running card — never throws, so the keyed entry cannot abdicate.
   const content = settledContentOf(block)
   const settled = content !== undefined
-  const images = settled ? generatedImageBlocks(content) : []
+  const attachments = settled ? imageAttachments(content) : []
   const isError = settledErrorOf(block)
+
+  // Per-call metadata: the persisted `tool/result.data.meta` when the platform
+  // delivers it, otherwise the plugin's manifest route (keyed by call id). Both
+  // are optional — the pictures come from the content's `image` blocks, so a
+  // missing metadata source costs only the captions and the work-dir handle.
+  const callId = callIdOf(block)
+  const [meta, setMeta] = useState<GeneratedImagesMeta | undefined>(() => settledMetaOf(block))
+  useEffect(() => {
+    const persisted = settledMetaOf(block)
+    if (persisted !== undefined) {
+      setMeta(persisted)
+      return
+    }
+    if (callId === undefined || attachments.length === 0) return
+    let alive = true
+    props.loadImagesMeta(callId)
+      .then((loaded) => { if (alive && loaded !== undefined) setMeta(loaded) })
+      .catch(() => {
+        // The manifest route is a convenience; the pictures still render.
+      })
+    return () => { alive = false }
+  }, [block, callId, attachments.length, props.loadImagesMeta])
+
   // The fullscreen overlay holds one image at a time (url + display name).
   const [viewing, setViewing] = useState<{ url: string; name: string } | undefined>(undefined)
 
   const runningPrompt = settled ? undefined : promptFromArgs(block)
-  const captionMeta = (image: GeneratedImageBlock): string => {
+  const captionMeta = (): string => {
     const parts: string[] = []
-    if (typeof image.model === 'string' && image.model !== '') parts.push(image.model)
-    if (typeof image.size === 'string' && image.size !== '') parts.push(image.size)
+    if (meta !== undefined && meta.model !== '') parts.push(meta.model)
+    if (meta !== undefined && meta.size !== '') parts.push(meta.size)
     return parts.join(' · ')
   }
 
   // The current DSH chat (default "compact" transcript view) folds a closed
-  // turn's tool calls into a process disclosure that starts collapsed, hiding
-  // the generated image until the user expands it. Whenever this card ends up
-  // inside such a collapsed disclosure, open that disclosure so the image is
-  // visible without extra interaction. No-op in normal mode (nothing is
-  // hidden) and harmless if the DOM markers ever change (the user can still
-  // expand manually). The fold can appear at any time after mount (it applies
-  // once the turn closes), so a persistent MutationObserver keeps watching the
-  // hidden marker. Idempotent: once open the marker disappears.
-  useEffect(() => {
-    const el = rootRef.current
-    if (el === null) return
-    const tryOpen = () => {
-      try {
-        const hiddenItem = el.closest('[data-turn-process-hidden]')
-        if (hiddenItem === null) return
-        const turn = hiddenItem.getAttribute('data-chat-turn')
-        const scope = hiddenItem.parentElement
-        if (turn === null || turn === '' || scope === null) return
-        const disclosure = scope.querySelector<HTMLButtonElement>(
-          `[data-chat-flow-kind="turn-process"][data-chat-turn="${CSS.escape(turn)}"] [data-turn-process]`,
-        )
-        if (disclosure === null || disclosure.getAttribute('aria-expanded') === 'true') return
-        disclosure.click()
-      } catch {
-        // The disclosure DOM markers are platform internals; never let the
-        // auto-expand attempt break the renderer.
-      }
-    }
-    const observer = new MutationObserver(() => { tryOpen() })
-    observer.observe(document.body, { attributes: true, attributeFilter: ['data-turn-process-hidden'], subtree: true })
-    tryOpen()
-    return () => observer.disconnect()
-  }, [])
+  // turn's tool calls into a process disclosure that starts collapsed. This
+  // card does NOT force that disclosure open: the pictures also render at the
+  // Turn tail (see GeneratedTurnTail), which is outside the group, so opening
+  // the group here would show the same image twice. The card's own picture is
+  // what the user sees while the Turn is still open.
 
   if (!settled) {
     return (
@@ -206,10 +280,10 @@ export function GenerateImageView(props: GenerateImageViewProps) {
     )
   }
 
-  // Settled with no generated-image blocks: error or text-only outcome. The
-  // keyed entry replaced the generic row, so surface the text envelope rather
-  // than dropping the call.
-  if (images.length === 0) {
+  // Settled with no image blocks: error or text-only outcome. The keyed entry
+  // replaced the generic row, so surface the text envelope rather than dropping
+  // the call.
+  if (attachments.length === 0) {
     const envelope = textBlocks(content).join('\n')
     return (
       <div className={css.root} ref={rootRef}>
@@ -233,24 +307,31 @@ export function GenerateImageView(props: GenerateImageViewProps) {
       <div className={css.head}>
         <span className={css.title}>{t('toolviewTitle')}</span>
         <span className={css.meta}>
-          {images.length > 1 ? `${images.length} · ` : ''}
-          {captionMeta(images[0])}
+          {attachments.length > 1 ? `${attachments.length} · ` : ''}
+          {captionMeta()}
         </span>
         {isError ? <span className={css.state}>{t('toolviewFailed')}</span> : null}
       </div>
       <div className={css.body}>
-        {images.map((image, index) => (
-          <ImageRow
-            key={image.attachment.attachmentId ?? `generated-${index}`}
-            image={image}
-            bridgeImageUrl={props.bridgeImageUrl}
-            openLocally={props.openLocally}
-            stageEdit={props.stageEdit}
-            onView={(url, name) => setViewing({ url, name })}
-            t={props.t}
-            index={index}
-          />
-        ))}
+        {attachments.map((attachment, index) => {
+          const record = meta?.images.find(image => image.attachmentId === attachment.attachmentId)
+          return (
+            <ImageCard
+              key={attachment.attachmentId ?? `generated-${index}`}
+              attachment={attachment}
+              record={record}
+              prompt={meta?.prompt ?? ''}
+              callId={callId}
+              loadImage={props.loadImage}
+              openLocally={props.openLocally}
+              stageEdit={props.stageEdit}
+              loadEditBytes={props.loadEditBytes}
+              onView={(url, name) => setViewing({ url, name })}
+              t={props.t}
+              index={index}
+            />
+          )
+        })}
       </div>
       {viewing !== undefined
         ? <FullscreenViewer url={viewing.url} name={viewing.name} onClose={() => setViewing(undefined)} />
@@ -259,18 +340,37 @@ export function GenerateImageView(props: GenerateImageViewProps) {
   )
 }
 
-/** Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes. */
-function FullscreenViewer(props: { url: string; name: string; onClose: () => void }) {
+/**
+ * Fullscreen image overlay: dark backdrop, Esc / backdrop-click closes.
+ *
+ * Rendered through a PORTAL into `document.body` rather than in place. The
+ * transcript nests this card inside the turn's process disclosure and a
+ * scroll container, both of which are exactly the situations where an inline
+ * `position: fixed` overlay can end up inside an ancestor stacking/containing
+ * block and never paint above the page — which is why 全屏查看 appeared to do
+ * nothing. Mounting at the document root sidesteps every ancestor's
+ * transform/filter/overflow, and the explicit z-index clears the platform's
+ * own floating layers (`--dsw-elevation-*` overlays sit at 1100).
+ */
+export function FullscreenViewer(props: { url: string; name: string; onClose: () => void }) {
   const { url, name, onClose } = props
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // The overlay owns the page while it is open: the transcript behind it must
+    // not scroll under the pointer.
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+    }
   }, [onClose])
-  return (
-    <div className={css.viewer} role="dialog" aria-label={name} onClick={onClose}>
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div className={css.viewer} role="dialog" aria-modal="true" aria-label={name} onClick={onClose}>
       <button type="button" className={css.viewerClose} aria-label="close" onClick={onClose}>✕</button>
       <img
         className={css.viewerImg}
@@ -278,16 +378,17 @@ function FullscreenViewer(props: { url: string; name: string; onClose: () => voi
         alt={name}
         onClick={(event) => event.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body,
   )
 }
 
-/** A usable file name for one generated image (attachment name or fallback). */
-function fileNameOf(image: GeneratedImageBlock, index: number): string {
-  const name = image.attachment.name
+/** A usable file name for one generated image (metadata name or fallback). */
+function fileNameOf(record: GeneratedImageRecord | undefined, attachment: ImageAttachmentRef, index: number): string {
+  const name = record?.name ?? attachment.name
   if (typeof name === 'string' && name !== '') return name
   const extension = (() => {
-    switch (image.attachment.mediaType) {
+    switch (attachment.mediaType) {
       case 'image/jpeg': return 'jpg'
       case 'image/webp': return 'webp'
       case 'image/gif': return 'gif'
@@ -297,17 +398,24 @@ function fileNameOf(image: GeneratedImageBlock, index: number): string {
   return `generated-${index + 1}.${extension}`
 }
 
-/** One generated image: resolve its URL, then render the frame + caption. */
-function ImageRow(props: {
-  image: GeneratedImageBlock
-  bridgeImageUrl: (attachment: ImageAttachmentRef) => Promise<string>
+/**
+ * One generated image: resolve its URL through the session-authorized loader,
+ * then render the frame + caption and the hover action cluster.
+ */
+export function ImageCard(props: {
+  attachment: ImageAttachmentRef
+  record: GeneratedImageRecord | undefined
+  prompt: string
+  callId: string | undefined
+  loadImage: (image: ImageAttachmentRef) => string | undefined | null | Promise<string | undefined | null>
   openLocally: (attachment: ImageAttachmentRef) => Promise<void>
-  stageEdit: (attachment: ImageAttachmentRef) => Promise<void>
+  stageEdit: (image: GeneratedImageEdit, callId: string) => Promise<void>
+  loadEditBytes: (attachmentId: string, callId: string) => Promise<string | undefined>
   onView: (url: string, name: string) => void
   t: (key: ImageGenLocaleKey) => string
   index: number
 }) {
-  const { image, bridgeImageUrl, openLocally, stageEdit, onView, t, index } = props
+  const { attachment, record, prompt, callId, loadImage, openLocally, stageEdit, loadEditBytes, onView, t, index } = props
   const [url, setUrl] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<string | undefined>(undefined)
   // Local-open handshake: idle → opening → idle (success) or failed (error).
@@ -331,24 +439,24 @@ function ImageRow(props: {
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [image.prompt, promptOpen])
+  }, [prompt, promptOpen])
 
   useEffect(() => {
     let alive = true
-    bridgeImageUrl(image.attachment)
+    resolveImageUrl(loadImage, attachment)
       .then((resolved) => { if (alive) setUrl(resolved) })
       .catch((error: unknown) => {
         if (!alive) return
         setFailed(error instanceof Error ? error.message : String(error))
       })
     return () => { alive = false }
-  }, [bridgeImageUrl, image.attachment])
+  }, [loadImage, attachment])
 
   const handleOpen = () => {
     if (openState === 'opening') return
     setOpenState('opening')
     setOpenError(undefined)
-    openLocally(image.attachment)
+    openLocally(attachment)
       .then(() => setOpenState('idle'))
       .catch((error: unknown) => {
         setOpenState('failed')
@@ -358,9 +466,22 @@ function ImageRow(props: {
 
   const handleEdit = () => {
     if (editState === 'staging') return
+    // 修改 re-submits the exact bytes the model itself was handed as its edit
+    // handle, so the staged draft must resolve through the call that produced
+    // this picture: the record supplies the work-dir path and the host serves
+    // those bytes for the same call id.
+    if (record === undefined || callId === undefined) {
+      setEditState('failed')
+      setEditError(t('toolviewEditNoHandle'))
+      return
+    }
     setEditState('staging')
     setEditError(undefined)
-    stageEdit(image.attachment)
+    loadEditBytes(record.attachmentId, callId)
+      .then(async (data) => {
+        if (typeof data !== 'string' || data === '') throw new Error(t('toolviewEditNoHandle'))
+        await stageEdit({ ...record, data }, callId)
+      })
       .then(() => setEditState('staged'))
       .catch((error: unknown) => {
         setEditState('failed')
@@ -368,14 +489,7 @@ function ImageRow(props: {
       })
   }
 
-  const meta = (() => {
-    const parts: string[] = []
-    if (typeof image.model === 'string' && image.model !== '') parts.push(`${image.model}`)
-    if (typeof image.size === 'string' && image.size !== '') parts.push(image.size)
-    return parts.join(' · ')
-  })()
-
-  const name = fileNameOf(image, index)
+  const name = fileNameOf(record, attachment, index)
 
   return (
     <div className={css.image}>
@@ -386,7 +500,7 @@ function ImageRow(props: {
               <img
                 className={css.img}
                 src={url}
-                alt={image.prompt}
+                alt={prompt}
                 loading="lazy"
               />
               <div className={css.actions}>
@@ -432,11 +546,10 @@ function ImageRow(props: {
             : <div className={css.loading}>{/* CSS-only spinner-less placeholder */}</div>}
       </div>
       <div className={css.caption}>
-        {meta !== '' ? <p className={css.captionLine}>{meta}</p> : null}
-        {image.prompt !== ''
+        {prompt !== ''
           ? (
             <div className={css.promptRow} data-expanded={promptOpen ? 'true' : undefined}>
-              <p ref={promptRef} className={`${css.captionLine} ${css.captionPrompt}`}>{image.prompt}</p>
+              <p ref={promptRef} className={`${css.captionLine} ${css.captionPrompt}`}>{prompt}</p>
               {promptOpen || promptClipped
                 ? (
                   <button

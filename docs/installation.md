@@ -2,6 +2,8 @@
 
 把 `dsh-tool-imagegen` 装进 DSH Desktop 的 `desktop` profile。
 
+> **⚠️ 只支持官方 DSH。** 本插件只支持 **DeepSeek Harness Desktop 官方发行版**。它依赖官方发行版内部的插件契约（`.volatile()` 配置表单、`configForms`、`slots` 座位表、客户端模块加载器、`uiConversation` 回合定义注册表、会话 `image` 块与附件授权），这些都不是公开稳定 API。任何第三方分支、魔改版、旧版本或其它 harness 实现都**不在支持范围内**。
+
 ## 前置要求
 
 - **DSH Desktop 0.2.0-rc.2 或更新**。本版插件用的是当前的「配置表单」契约：一个插件的 `Config` schema 就是注册本身，GUI 表单由 schema 里带 `.volatile()` 的字段生成，配置卡注册进 Plugins 页的 `plugins.item` 槽。旧版的 `settings.plugin.item` 槽、`installSettingsSection` / `settingsNamespace` 导出在新客户端里**已不存在**，旧版插件在 0.2.0-rc.2 上会直接加载失败。

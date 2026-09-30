@@ -118,11 +118,16 @@
   cursor: default;
 }
 
-/* Fullscreen image viewer overlay. */
+/* Fullscreen image viewer overlay. Fixed + portaled to `document.body` by the
+   component (see FullscreenViewer): an in-place fixed layer inside the
+   transcript's process disclosure can be trapped by an ancestor's containing
+   block, which is what made 全屏查看 look like a dead button. The z-index is
+   deliberately far above the platform's floating layers (its elevation
+   overlays sit at 1100) so no shipped surface can cover an open viewer. */
 .viewer {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 2147483000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -272,6 +277,18 @@
   font-size: 12px;
   line-height: 20px;
   text-align: center;
+}
+
+/* The Turn-tail picture card (GeneratedTurnTail): rendered by ui-chat beneath a
+   completed Turn's closing prose and OUTSIDE its collapsible tool group, so a
+   generated picture reads as part of the answer. It stacks the pictures of
+   every settled generate_image call of that Turn. */
+.turnTail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
