@@ -1,24 +1,23 @@
 /**
- * Wire contract shared by the host and client halves of dsh-tool-imagegen:
- * the settings namespace and the loopback bridge route paths.
+ * Wire contract shared by the host and client halves of dsh-tool-imagegen: the
+ * settings namespace and the loopback bridge route paths.
  *
- * The namespace deliberately reuses `dsh-imagegen` — the section the old
- * @dickpy/dsh-imagegen plugin wrote — so any apiUrl/apiKey already present in
- * settings.yaml inherits automatically. The bridge route paths are this
- * plugin's own (/api/dsh-tool-imagegen/*) to avoid colliding with the old
- * plugin's (now-removed) routes.
+ * The namespace is `dsh-imagegen`, which is both this plugin's profile entry id
+ * and the key its settings form is addressed by. Configuration itself does NOT
+ * travel over a plugin route: the browser card writes through the platform's
+ * own configuration-form service, so no settings path is declared here.
+ *
+ * The remaining route paths are this plugin's own (/api/dsh-tool-imagegen/*) to
+ * avoid colliding with the old plugin's (now-removed) routes.
  *
  * Pure constants — safe for the client bundle to inline.
  */
 
-/** Settings namespace this plugin owns (host settings seam + bridge). */
+/**
+ * Settings namespace this plugin owns: the profile entry id of the plugin row,
+ * and the key the card binds its form to.
+ */
 export const IMAGEGEN_SETTINGS_NAMESPACE = 'dsh-imagegen'
-
-/** Same-origin route family (loopback-only, mirroring the dsh-ssh fence). */
-export const SETTINGS_API = {
-  describe: '/api/dsh-tool-imagegen/settings/describe',
-  mutate: '/api/dsh-tool-imagegen/settings/mutate',
-} as const
 
 /**
  * Loopback bridge route serving generated-image bytes to the GUI. The
@@ -45,16 +44,6 @@ export const DEFAULT_MODEL = 'gpt-image-2'
  */
 export const UPLOAD_API = {
   path: '/api/dsh-tool-imagegen/upload',
-} as const
-
-/**
- * Loopback bridge route answering whether a given provider/model accepts image
- * input. The client learns the selected model from its own session.models RPC
- * and asks here whether the plugin's custom upload button should be shown
- * (text-only) or the native composer upload used instead (image-capable).
- */
-export const CAPABILITY_API = {
-  path: '/api/dsh-tool-imagegen/capability',
 } as const
 
 /** Storage-maintenance bridges (stats + orphan cleanup). */

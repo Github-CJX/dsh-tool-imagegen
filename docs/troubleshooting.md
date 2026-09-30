@@ -2,6 +2,29 @@
 
 按症状排查。每条都给出**原因**和**解决**，标注了对应的已修复版本状态。
 
+## 0. 升级 DSH 后插件整个加载失败，或设置卡消失
+
+- **症状**（0.2.0-rc.2 起）：
+  - 启动日志里 `dsh-imagegen` 那一行是 `failed`，错误形如 `The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'installSettingsSection'`；
+  - 或者插件加载正常，但**任何地方都找不到配置卡**（旧版在「设置 → 插件 → 可配置」，新版在侧栏「插件」页）。
+- **原因**：0.2.0-rc.2 换掉了整套插件配置契约，旧写法全部失效：
+
+  | 旧 API | 0.2.0-rc.2 |
+  |---|---|
+  | `@deepseek-ai/dsh-settings` 的 `installSettingsSection` / `settingsNamespace` | 已删除（导入它会直接抛错，插件整体加载失败） |
+  | 槽 `settings.plugin.item`（按设置命名空间 keyed） | 已删除，换成 Plugins 页的列表槽 `plugins.item` |
+  | 任意字符串当设置命名空间 | 命名空间**只能是**插件在 profile 里的**行 id**（`cordis.patch.yml` 的 `id:`） |
+  | schema 字段自动可编辑 | **只有带 `.volatile()` 的字段**会进表单；一个 volatile 字段都没有时整条 entry 被丢弃，卡片完全不出现 |
+  | 浏览器侧自带 HTTP 设置桥 | 平台自己的 `configForms` 服务（`ctx.configForms.get(行id)`）负责读写、版本栅栏、冲突检测与密钥脱敏 |
+
+- **解决**：**当前版本已适配 0.2.0-rc.2**。要点（自改代码时同样适用）：
+  1. 宿主侧删掉 `installSettingsSection` / `settingsNamespace`，改成导出一个 `Config` schema，**每个想在 GUI 里编辑的字段都加 `.volatile()`**；
+  2. 读配置必须走引用解包（`config.apiUrl.get()`，本仓库封装为 `liveValue()`）——volatile 字段在 `apply(ctx, config)` 里是**引用对象**，不是值；
+  3. 想让保存后立刻生效，监听 `loader/volatile-update` 并重建依赖配置的注册（本插件的系统提示 + 工具 schema）；
+  4. 浏览器侧把设置卡注册进 `plugins.item`（`id` / `order` / `label` / `locale` / `inject`），并用 `ctx.configForms.whileServed([行id], …)` 包住，**卡片组件必须先判断 `props.view`**：`'summary'` 只返回那一行说明文字，`'page'` 才渲染表单；
+  5. 密钥字段写成 `z.string().role('secret').volatile()`，且**不要给 default**——`role('secret')` 字段靠 `value !== undefined` 判断「是否已配置」，给了 `''` 默认值会导致从没配过密钥也显示「已配置」。
+- **回归保护**：`test-settings.mjs` 会断言「序列化后的 schema 里恰好是工具读取的那批字段、且全部 volatile」，并带一个反例（非 volatile 字段不进表单）；`smoke-client.mjs` 会断言卡片在 `view: 'summary'` 下只渲染一行、在 `'page'` 下才渲染表单。
+
 ## 1. 启动报错 `loaded without registering "@dickpy/dsh-imagegen"`
 
 - **原因**：旧插件 `@dickpy/dsh-imagegen` 仍残留在 desktop profile 的依赖 / bundles 列表里（它的客户端 bundle 不符合 dsh client-modules 契约，DSH 自检会报错）。
@@ -34,7 +57,7 @@
 ## 6. 上游报 400（模型不存在 / 参数错误）
 
 - **原因**：`model` 字段与上游接口不匹配（比如上游模型名不是 `gpt-image-2`），或尺寸非法。
-- **解决**：设置 → 插件 → 可配置 → 修改「模型」为上游实际支持的模型名（如 `gpt-image-1`、`dall-e-3` 或接口方提供的名称），尺寸改回 `1024x1024` 等常见值，保存后重试。错误信息里会带上 HTTP 状态码与上游返回内容。
+- **解决**：侧栏 **插件** → 本插件卡片 → 修改「模型」为上游实际支持的模型名（如 `gpt-image-1`、`dall-e-3` 或接口方提供的名称），尺寸改回 `1024x1024` 等常见值，保存后重试。错误信息里会带上 HTTP 状态码与上游返回内容。
 
 ## 7. 图片不显示 / 一直转圈 / 显示加载失败
 
@@ -45,10 +68,14 @@
   - 附件桥在宿主侧抛错（见第 14 条：DSH 2.0.10 的会话事件 API 变更）
 - **解决**：确认用本机地址（127.0.0.1）访问；重启 DSH 后在新会话重新生成一次。旧会话里非常久远的图片可能已随附件库清理而失效，属预期行为。
 
-## 8. 设置页卡片打不开 / 保存失败 / 提示仅本机可访问
+## 8. 找得到卡片但控件是灰的 / 卡片根本不出现
 
-- **原因**：设置桥是 loopback 围栏（与旧插件相同的安全设计），非本机浏览器无法读写；或设置文件处于只读状态。
-- **解决**：用本机浏览器访问。密钥字段「已保存」说明已写入，留空保存表示不变；「清除已保存的密钥」会删掉密钥。
+- **卡片不出现**：说明宿主没有把这条 entry 报成「可配置」。按顺序查：
+  1. 插件行是否在 profile 的 `dsh.profile.bundles` 里、且宿主加载成功（见第 0 条）；
+  2. `Config` 里是否**至少有一个** `.volatile()` 字段——一个都没有时 `settings.describe()` 直接跳过这条 entry，`whileServed` 不会触发，于是卡片完全不注册（表现为「什么都没有」，不是「卡片报错」）；
+  3. 行 id 是否唯一：profile 里重复的 entry id 会被排掉。
+- **控件灰掉（只读）**：宿主设置文档不可写。远端（非 loopback）浏览器访问时，客户端配置表单以 `memory` 模式运行，不跨网线，卡片自然不出现——这是设计如此，配置只在**本机**可改。
+- **保存失败**：多半是版本栅栏冲突（表单打开期间设置被别处改过）。保存失败的草稿会被保留，重新保存即可。
 
 ## 9. 生成后继续对话报 `UNSUPPORTED_CONTENT`
 
@@ -57,19 +84,20 @@
 
 ## 10. `pnpm install` 之后工具消失 / 行为异常
 
-- **原因**：`pnpm install` 可能把 `node_modules/@local/dsh-tool-imagegen` 的符号链接替换成插件目录的**旧拷贝**，导致宿主代码与插件目录不一致。
+- **原因**：profile 的依赖被换成了别的形态（例如从本地路径装成拷贝、或指向了一个已被移动/删除的目录），DSH 加载的就不再是你当前编辑的那份代码。
 - **解决**：
   ```bash
-  rm -rf node_modules/@local/dsh-tool-imagegen
-  pnpm install
-  ls -la node_modules/@local/   # 确认是指向 ../../plugins/dsh-tool-imagegen 的链接
+  # 确认装的是 link: 且指向你正在编辑的目录
+  node -e "console.log(require('C:/Users/CJX/.dsh/profiles/desktop/package.json').dependencies)"
+  ls C:/Users/CJX/.dsh/profiles/desktop/node_modules/@local/
   ```
-  重启 DSH。
+  指向不对就重新 `add` 一次（见安装文档），然后重启 DSH。
 
 ## 11. API 密钥安全问题
 
-- 密钥只保存在本机 `settings.yaml` 的 `dsh-imagegen:` 段；设置页**不回显**、插件桥路由**不输出**密钥（describe 走 `redactSecrets`）。
-- 不要把 settings.yaml 或密钥提交进 GitHub 仓库；本仓库的文档示例一律使用占位符。
+- 密钥是 schema 里的 `role('secret')` 字段，**只存在于宿主**：平台在每次响应里结构化剥掉它（`redactSecrets`），只回一个 `{ path, set }` 的侧车告诉界面「配没配」，所以设置页**永远不回显**密钥。密钥字段留空保存＝保持当前密钥不变。
+- 存放位置：profile 的补丁文件 `C:\Users\CJX\.dsh\profiles\desktop\cordis.patch.yml`（`id: dsh-imagegen` 那一行的 `config`）。**不再**写 `settings.yaml`。
+- 不要把 profile 补丁或密钥提交进 GitHub 仓库；本仓库的文档示例一律使用占位符。
 
 ## 12. 改了设置但不生效
 
@@ -86,7 +114,7 @@
 
 - **症状**：`generate_image` 卡片有边框，框内显示浏览器默认的**加载失败图标**加一段 alt 文字（就是提示词），既没有图片也没有红色文案。同一现象也可能表现为「一直转圈」。
 - **原因**：附件桥（`/api/dsh-tool-imagegen/attachment`）读取 `session.events` 做会话引用授权。**DSH 2.0.10 的会话服务把事件日志改为私有**：`Session` 只提供 `snapshotEvents(from, to)` / `ownEvents()` / `eventAt(seq)`，`session.events` 是 `undefined`，于是 `referencedImageRef()` 在 `for (const event of events)` 处抛 `TypeError: events is not iterable`，路由 500。宿主日志会明确记录这条栈（`%APPDATA%\DSH Desktop\logs\host\dsh-<日期>.log`，`[desktop-web-server] TypeError: events is not iterable`）。
-- **解决**：**当前版本已修复**——新增 `lib/session-events.js`（优先 `snapshotEvents()`，兼容旧 `events` 数组，最后回退 `ownEvents()`，异常形状退化为空列表即 404 而非 500），`routes.js` / `index.js` / `maintenance.js` 全部改用它；回归测试 `test-session-events.mjs` 用 2.0.10 的会话形状直接驱动真实路由，断言 200 + 字节。改完必须 `node sync-profile.mjs` 并**完全重启** DSH（宿主侧代码不热重载）。
+- **解决**：**当前版本已修复**——新增 `lib/session-events.js`（优先 `snapshotEvents()`，兼容旧 `events` 数组，最后回退 `ownEvents()`，异常形状退化为空列表即 404 而非 500），`routes.js` / `index.js` / `maintenance.js` 全部改用它；回归测试 `test-session-events.mjs` 用 2.0.10 的会话形状直接驱动真实路由，断言 200 + 字节。改完**完全重启** DSH（宿主侧代码不热重载）；本地路径装成 `link:` 时不需要重新安装。
 
 ## 15. 找不到生图插件的上传按钮
 

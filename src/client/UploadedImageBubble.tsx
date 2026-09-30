@@ -48,6 +48,23 @@ function primitive<T>(name: string, fallback: T): T {
   return value === undefined ? fallback : value as T
 }
 
+/**
+ * Resolve the first primitive name that this build actually ships. Icon exports
+ * are renamed between releases without being part of a published contract —
+ * `IconCopyOutline16` became `IconCopyOutlineRegular` — so each icon is looked
+ * up under every name it has carried.
+ * @param names - candidate export names, most recent first.
+ * @param fallback - rendered when none of them exists.
+ * @returns the first shipped component, or the fallback.
+ */
+function primitiveIcon<T>(names: string[], fallback: T): T {
+  for (const name of names) {
+    const value = (primitivesModule as unknown as Record<string, unknown>)[name]
+    if (value !== undefined) return value as T
+  }
+  return fallback
+}
+
 /** Stand-in for an icon that this DSH build no longer ships. */
 function NoIcon(): ReactNode {
   return null
@@ -87,8 +104,8 @@ async function fallbackWriteClipboard(text: string): Promise<boolean> {
   }
 }
 
-const IconCheckOutline16 = primitive<ComponentType>('IconCheckOutline16', NoIcon)
-const IconCopyOutline16 = primitive<ComponentType>('IconCopyOutline16', NoIcon)
+const IconCheckOutline16 = primitiveIcon<ComponentType>(['IconCheckOutlineRegular', 'IconCheckOutline16'], NoIcon)
+const IconCopyOutline16 = primitiveIcon<ComponentType>(['IconCopyOutlineRegular', 'IconCopyOutline16'], NoIcon)
 const Tooltip = primitive<ComponentType<{ children?: ReactNode }>>('Tooltip', PassthroughTooltip)
 const JsonBlock = primitive<ComponentType<{ label: string; payload: unknown; truncatedLabel?: (total: number) => string }>>('JsonBlock', PlainJsonBlock)
 const writeClipboard = primitive<(text: string) => Promise<boolean>>('writeClipboard', fallbackWriteClipboard)

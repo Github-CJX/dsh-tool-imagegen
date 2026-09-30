@@ -4,10 +4,10 @@
  * orphan cleanup — files no session (live or persisted) references are
  * removed, and the freed space is reported.
  *
- * rc.7 keyed the `settings.plugin.item` slot by settings namespace (one entry
- * per key), so this is no longer a standalone card: it renders as a section
- * INSIDE the generator settings card (see SettingsCard.tsx), bound to the
- * same loopback maintenance bridge.
+ * The `plugins.item` slot holds one entry per plugin id, and the plugin owns
+ * exactly one settings page, so this is not a standalone card: it renders as a
+ * section INSIDE the generator settings card (see SettingsCard.tsx), bound to
+ * the same loopback maintenance bridge.
  */
 
 import { memo, useCallback, useEffect, useState } from 'react'

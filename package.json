@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-tool-imagegen",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -17,17 +17,25 @@
     "dsh-plugin"
   ],
   "type": "module",
-  "description": "DSH 对话内联生图插件：OpenAI 兼容接口，图片以 generated-image 块直接显示在对话框内，设置项在 设置→插件→可配置。",
+  "description": "DSH 对话内联生图插件：OpenAI 兼容接口，图片以 generated-image 块直接显示在对话框内，设置项在「插件」页的官方配置卡里。",
   "main": "./lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-settings": "0.1.0-rc.8",
-    "schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "~3.18.4"
   },
   "devDependencies": {
     "@types/react": "~18.3.1",
@@ -40,10 +48,9 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-store",
-        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-attachment"
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ],
       "platform": "web"
     }

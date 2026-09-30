@@ -2,11 +2,10 @@
  * Browser-half entry for the dsh-tool-imagegen plugin — runs inside the dsh
  * web GUI.
  *
- * Registers the plugin locale dictionaries, binds the plugin's own settings
- * scope (its loopback bridge routes serve the dsh-imagegen namespace the
- * official rc.6 allowlist would refuse), registers the settings card into the
- * official `settings.plugin.item` slot (Settings → Plugins → Configurable),
- * and registers the inline generated-image view into the keyed
+ * Registers the plugin locale dictionaries, binds its settings scope to the
+ * platform's own configuration-form service for the `dsh-imagegen` entry,
+ * registers the settings card into the Plugins page's `plugins.item` slot, and
+ * registers the inline generated-image view into the keyed
  * `tool.call.toolview` slot for the `generate_image` tool. Failure policy:
  * registration problems are logged, never thrown — an external plugin must not
  * take the GUI down.
@@ -21,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-tool'
 import { en, zh, type ImageGenLocaleKey } from './locales.ts'
 import { ImageGenSettingsCard, ImageGenSettingsCardController, type ImageGenSettingsCardFace } from './SettingsCard.tsx'
-import { bindImageGenScope, type ImageGenScope } from './settings-scope.ts'
+import { bindImageGenScope, unavailableScope, type ConfigFormsLike, type ImageGenScope } from './settings-scope.ts'
 import { GenerateImageView, type GenerateImageViewFace } from './GenerateImageView.tsx'
 import { type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import { UploadedImageBubble } from './UploadedImageBubble.tsx'
@@ -44,6 +43,15 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 /** Locale namespace this plugin owns. */
 const NS = 'dsh-imagegen'
 
+/**
+ * The plugin's profile entry id in the host composition. In the current DSH a
+ * configurable entry is addressed by its loader entry id, so this is also the
+ * settings namespace the card edits and the key it registers under.
+ * Spelled here rather than imported: a client package must not import a host
+ * package.
+ */
+const ENTRY_ID = 'dsh-imagegen'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** dsh-tool-imagegen surface copy. */
@@ -52,42 +60,48 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     /**
-     * The official plugin-configuration slot the Settings → Plugins →
-     * Configurable tab declares and renders. rc.7 made it a KEYED slot whose
-     * key is the settings namespace the card edits; the tab only dispatches
-     * namespaces the host settings service serves (settings.describe). This
-     * card registers under the dsh-imagegen key it owns. Spelled here with the
-     * same shape so this package can register without depending on the sibling
-     * UI package.
+     * The Plugins page's list of configurable plugins, declared by
+     * `@deepseek-ai/dsh-client-ui-plugin-manager` and occupied by one companion
+     * package per configurable host-plane namespace. The page renders the entry
+     * as the card's one-liner in `view: 'summary'` and, once the card is opened,
+     * as the body of the plugin's own page in `view: 'page'`. Spelled here with
+     * the same shape so this package can register without depending on the
+     * sibling UI package.
      */
-    'settings.plugin.item': { kind: 'keyed'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
+    'plugins.item': { kind: 'list'; scope: 'root'; owner: ImageGenPluginItemOwnerProps }
   }
 }
 
-/** Owner share of a plugin card (the section supplies nothing). */
+/** Owner share of a plugin card: the view the page asks this entry for. */
 export interface ImageGenPluginItemOwnerProps {
-  /** Marker field: card owner props are intentionally empty. */
-  children?: never
+  /** `summary` renders the one-liner alone; `page` renders the form. */
+  view: 'summary' | 'page'
 }
 
 /** Required services (fiber inject waiting — the runtime must be up first). */
-export const inject = ['slots', 'locale', 'connection', 'conversation']
+export const inject = ['slots', 'locale', 'connection', 'conversation', 'configForms']
 
 /**
  * Mount the settings card and the inline generated-image view.
- * @param ctx - client root context (services: slots, locale, connection).
+ * @param ctx - client root context (services: slots, locale, connection,
+ *   conversation, configForms).
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-tool-imagegen: dictionaries')
+  const t = ctx.locale.bind(NS)
 
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   const loopback = connection?.isLoopback === true
-  // Every plugin bridge route is loopback-fenced; remote browsers get an
-  // unavailable scope / failing faces instead of fetching them.
+  // The plugin's OWN bridge routes are loopback-fenced; a remote browser gets
+  // failing faces instead of fetching them. (Configuration travels over the
+  // platform's settings service, which handles its own non-loopback case.)
   const bridgeFetch = loopback
     ? (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init)
     : () => { throw new Error('plugin bridge is loopback-only') }
-  const scope: ImageGenScope = bindImageGenScope(bridgeFetch)
+  const forms = ctx.get('configForms') as unknown as ConfigFormsLike | undefined
+  const scope: ImageGenScope = forms === undefined
+    ? unavailableScope()
+    : bindImageGenScope(forms, ENTRY_ID)
 
   // Re-read the scope whenever the connection resets (same invalidation the
   // official settings binder wires).
@@ -95,27 +109,39 @@ export function apply(ctx: ClientContext): void {
     const disposers = [
       ctx.on('connection/reset', () => { void scope.load() }),
     ]
-    return () => { for (const dispose of disposers) dispose() }
+    return () => {
+      for (const dispose of disposers) dispose()
+      scope.dispose()
+    }
   }, 'dsh-tool-imagegen: settings scope invalidation')
 
-  // Plugin configuration card: one staged form over the `dsh-imagegen` scope,
-  // registered into the official plugin-configuration slot (Settings →
-  // Plugins → Configurable). rc.7 keyed the slot by settings namespace, so the
-  // registration key is the namespace it edits — and the storage-maintenance
-  // section (a second card in rc.6) now lives INSIDE this card, because a
-  // keyed slot holds one entry per key.
+  // Plugin configuration card: one staged form over the `dsh-imagegen` entry,
+  // registered into the Plugins page's `plugins.item` list slot — the same slot
+  // the shipped settings pages use. `whileServed` keeps the registration alive
+  // only while the Host actually serves that entry, so a deployment whose
+  // composition dropped the plugin (or whose settings service is read-only)
+  // shows no trace of the card instead of a dead control.
+  //
+  // The storage-maintenance section lives INSIDE this card: a list slot holds
+  // one entry per id, and the plugin owns exactly one settings page.
   try {
     const settingsCard = new ImageGenSettingsCardController(scope)
-    ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: NS,
-      order: 30,
-      locale: NS,
-      inject: (): ImageGenSettingsCardFace => ({
-        ...settingsCard.inject(),
-        maintenance: { fetchFn: bridgeFetch },
-      }),
-    }, ImageGenSettingsCard))
+    ctx.effect(
+      () => (forms === undefined
+        ? () => {}
+        : forms.whileServed([ENTRY_ID], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+          name: 'plugins.item',
+          id: ENTRY_ID,
+          order: 50,
+          label: () => t('cardTitle'),
+          locale: NS,
+          inject: (): ImageGenSettingsCardFace => ({
+            ...settingsCard.inject(),
+            maintenance: { fetchFn: bridgeFetch },
+          }),
+        }, ImageGenSettingsCard)))),
+      'dsh-tool-imagegen: settings page',
+    )
   } catch (error) {
     console.warn('[dsh-tool-imagegen] settings card registration failed:', error)
   }
@@ -195,23 +221,33 @@ export function apply(ctx: ClientContext): void {
   // Send-time interception: wrap the platform conversation service's
   // sendSession so an image staged by the card's 修改 button is submitted
   // TOGETHER with the typed message. The platform composer calls
-  // sendSession(session, text, imageIds, mode) on submit (sink); when this
+  // sendSession(session, text, attachmentIds, mode, signal) on submit; when this
   // session holds a staged edit reference, the wrapper posts it to the upload
   // bridge with the text instead, and the host enqueues ONE user message
   // ([uploaded-image] + envelope carrying the text). Without a staged draft the
   // wrapper is a pass-through, so ordinary conversation — native attachments
   // included — is untouched. A failed upload throws (the composer restores the
   // draft text) and the staged draft is kept for a retry.
+  //
+  // The wrapper mirrors the platform signature exactly, `signal` included: the
+  // composer passes an AbortSignal that cancels the whole Host admission, and
+  // dropping it would leave a cancelled submission running to completion.
   try {
     const conversation = ctx.get('conversation') as {
-      sendSession: (session: { sessionId?: string }, text: string, imageIds: unknown[], mode: unknown) => Promise<{ ok: boolean }>
+      sendSession: (
+        session: { sessionId?: string },
+        text: string,
+        attachmentIds: unknown[],
+        mode: unknown,
+        signal?: AbortSignal,
+      ) => Promise<unknown>
     } | undefined
     if (conversation !== undefined && typeof conversation.sendSession === 'function') {
       const originalSend = conversation.sendSession.bind(conversation)
-      conversation.sendSession = (async (session, text, imageIds, mode) => {
+      conversation.sendSession = (async (session, text, attachmentIds, mode, signal) => {
         const sessionId = session?.sessionId
         const draft = typeof sessionId === 'string' && sessionId !== '' ? getPending(sessionId) : undefined
-        if (draft === undefined) return originalSend(session, text, imageIds, mode)
+        if (draft === undefined) return originalSend(session, text, attachmentIds, mode, signal)
         let response
         try {
           response = await bridgeFetch(UPLOAD_API.path, {
@@ -224,6 +260,7 @@ export function apply(ctx: ClientContext): void {
               name: draft.name,
               text,
             }),
+            ...signal === undefined ? {} : { signal },
           })
         } catch (error) {
           const message = error instanceof Error && error.message !== '' ? error.message : 'upload bridge unreachable'
@@ -239,7 +276,9 @@ export function apply(ctx: ClientContext): void {
         // Consumed: the host enqueued the combined user message.
         setPending(sessionId, undefined)
         setPendingFailure(sessionId, undefined)
-        return { ok: true }
+        // The platform contract is a discriminated outcome; the composer only
+        // distinguishes success from failure.
+        return { kind: 'success' }
       }) as typeof conversation.sendSession
     }
   } catch (error) {

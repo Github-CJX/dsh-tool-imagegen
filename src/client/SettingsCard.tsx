@@ -1,9 +1,10 @@
 /**
  * The dsh-tool-imagegen settings card: api_url, api_key (secret, display-only
  * "set" state), model (default gpt-image-2, hand-editable), size, count, and
- * the plugin switches. Registers into the official `settings.plugin.item` slot
- * (the Settings → Plugins → Configurable tab), independent of the dsh-web-ui
- * family group, bound to the plugin's own bridge settings scope.
+ * the plugin switches. Registers into the official `plugins.item` slot — the
+ * Plugins page's list of configurable plugins, where this entry is the card's
+ * one-liner in `view: 'summary'` and its body in `view: 'page'` — bound to the
+ * platform's own configuration-form service for the `dsh-imagegen` entry.
  *
  * Performance: the card subscribes to the whole staged-form snapshot, so every
  * keystroke rebuilds it. To keep typing smooth the field controls are memoized
@@ -12,23 +13,33 @@
  * not all twenty.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Defensive primitive lookup: this package's named exports drift between DSH
-// releases, and a missing export is `undefined` at runtime — rendering it makes
-// React throw error #130 and abdicates this keyed settings-card entry. The
-// chevron is decoration, so an absent icon degrades to nothing.
-import * as primitivesModule from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { CardForm, booleanField, numberField, secretField, textField, type CardActions, type CardShell, type FieldState as CardFieldState } from './settings-form.ts'
 import type { ImageGenScope } from './settings-scope.ts'
 import { StorageSection, type MaintenanceCardFace } from './MaintenanceCard.tsx'
 import css from './settings-card.module.css'
 
-/** Chevron icon, or a no-op stand-in when this DSH build does not ship it. */
-const IconChevronDownOutline14: ComponentType<{ className?: string }> =
-  ((primitivesModule as unknown as Record<string, unknown>).IconChevronDownOutline14 ??
-    (() => null)) as ComponentType<{ className?: string }>
+/**
+ * Disclosure chevron. Drawn inline rather than taken from
+ * `@deepseek-ai/dsh-client-ui-primitives`: that package's icon export names are
+ * renamed between releases (2.0.10's `IconChevronDownOutline14` is
+ * `IconChevronDownOutlineRegular` here), they are not part of a published
+ * contract, and a missing export renders `undefined` — which makes React throw
+ * and abdicates this slot entry, hiding the whole settings page. One 12px glyph
+ * is not worth that coupling: it is decoration, and `currentColor` keeps the
+ * host theme in charge of its colour.
+ * @param props.className - the rotation class owned by the stylesheet.
+ * @returns the chevron glyph.
+ */
+function Chevron({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M4 6.5 8 10.5 12 6.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 /** The fields this card edits (the namespace's full schema). */
 export interface ImageGenSettings {
@@ -197,20 +208,28 @@ export class ImageGenSettingsCardController {
 
 /** Props the renderer binds for this card. */
 export type ImageGenSettingsCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  PropsRuntime<'plugins.item'>
   & PropsLocale<'dsh-imagegen'>
   & InjectFace<ImageGenSettingsCardFace>
 
 /**
  * Render the card.
- * @param props - locale copy, the card snapshot, and the form actions.
- * @returns the card, or nothing while the namespace is still loading.
+ *
+ * The Plugins page asks one registration for two different things: `view:
+ * 'summary'` is the one-liner on the plugin's card in the list, and `view:
+ * 'page'` is the body of the plugin's own page. Only the page draws the form —
+ * returning the form for the summary would nest the whole card inside its own
+ * list row.
+ * @param props - the requested view, locale copy, the card snapshot, the
+ *   injected maintenance face, and the form actions.
+ * @returns the one-liner, the card, or nothing while the namespace is loading.
  */
 export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
   const { t, maintenance } = props
   const state = props.useImageGenSettingsCard(snapshot => snapshot)
   const keySet = props.useImageGenKeySet(snapshot => snapshot)
   const [open, setOpen] = useState(false)
+  if (props.view === 'summary') return t('cardDescription')
   if (!state.available) return null
   const title = t('cardTitle')
   const blocked = !state.dirty || state.invalid || state.saving
@@ -274,7 +293,7 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
             <span className={css.name}>{title}</span>
             <span className={css.description}>{t('cardDescription')}</span>
           </span>
-          <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} />
+          <Chevron className={open ? css.chevronOpen : css.chevron} />
         </button>
         {open
           ? (
@@ -300,7 +319,7 @@ export function ImageGenSettingsCard(props: ImageGenSettingsCardProps) {
           <span className={css.description}>{t('cardDescription')}</span>
         </span>
         {state.dirty ? <span className={css.pending}>{t('unsaved')}</span> : null}
-        <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} />
+        <Chevron className={open ? css.chevronOpen : css.chevron} />
       </button>
       {open
         ? (
@@ -644,7 +663,7 @@ const ValueField = memo(function ValueField(props: FieldProps & {
           disabled={props.disabled || props.locked === true}
           onClick={() => { setOpen(!open) }}
         >
-          <IconChevronDownOutline14 />
+          <Chevron />
         </button>
         {open
           ? (

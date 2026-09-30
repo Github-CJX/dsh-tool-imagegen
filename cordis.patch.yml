@@ -1,5 +1,13 @@
 # Patch layer for @local/dsh-tool-imagegen — registers the plugin into the
 # profile bundle list. The profile loader merges this with the bundle layers.
+#
+# The row id is `dsh-imagegen`. It is load-bearing, not cosmetic: the platform's
+# settings service addresses a configurable entry by its loader entry id, so
+# this string IS the settings namespace the browser card binds to (see ENTRY_ID
+# in src/client/index.ts). It also reuses the section name the old
+# @dickpy/dsh-imagegen plugin wrote, which is what lets the platform's legacy
+# importer fold an existing `dsh-imagegen:` section of settings.yaml into this
+# entry on first boot.
 - insert:
-    - id: dsh-tool-imagegen
+    - id: dsh-imagegen
       name: '@local/dsh-tool-imagegen'

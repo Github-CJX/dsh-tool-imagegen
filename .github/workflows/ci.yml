@@ -24,7 +24,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Host tests
-        run: node test-engine.mjs && node test-maintenance.mjs && node test-routes-open.mjs
+        run: >-
+          node test-settings.mjs
+          && node test-engine.mjs
+          && node test-maintenance.mjs
+          && node test-routes-open.mjs
+          && node test-session-events.mjs
 
       - name: Build client bundle
         run: node build-client.mjs

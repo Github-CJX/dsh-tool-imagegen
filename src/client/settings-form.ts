@@ -3,11 +3,13 @@
  * user types and writes it only when they save — the settings write is a
  * durable, revision-fenced document mutation, so staging keeps what is on
  * screen exactly what a save would store. Self-contained slice of the same
- * pattern the dsh-web-ui family cards use (this package must not depend on a
- * sibling UI package).
+ * pattern the platform's own settings cards use (this package must not depend
+ * on the primitives' form model: it changes between releases, and the card owns
+ * controls — checkboxes and combo boxes — that the primitives do not offer).
  */
 
-import { createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Scope, ScopeSnapshot } from './settings-scope.ts'
 
 /** The write one field's staged text performs when the card is saved. */
 export type FieldWrite =
@@ -174,7 +176,7 @@ export class CardForm<T> {
    *   value, so a write's outcome is read from the secrets sidecar instead).
    */
   constructor(
-    private readonly scope: SettingsScope<T>,
+    private readonly scope: Scope<T>,
     specs: FieldSpec[],
     private readonly options: { secretSettled?: (field: string) => boolean } = {},
   ) {
@@ -312,7 +314,7 @@ export class CardForm<T> {
     return spec
   }
 
-  private snapshotOf(): SettingsScopeSnapshot<T> {
+  private snapshotOf(): ScopeSnapshot<T> {
     return this.scope.getSnapshot()
   }
 

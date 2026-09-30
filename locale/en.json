@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Inline image generation",
+    "description": "Generate images inside the conversation through any OpenAI-compatible image API. Results render inline in the chat, and the endpoint, key, model and request parameters are configured on this page."
+  }
+}

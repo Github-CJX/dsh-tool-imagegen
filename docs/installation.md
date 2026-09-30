@@ -1,123 +1,120 @@
 # 安装文档
 
-将 `dsh-tool-imagegen` 挂载到 DSH Desktop（DeepSeek Harness）desktop profile。
+把 `dsh-tool-imagegen` 装进 DSH Desktop 的 `desktop` profile。
 
 ## 前置要求
 
-- 已安装 DSH Desktop（插件目录 `C:\Users\CJX\.dsh\plugins\`、profile 目录 `C:\Users\CJX\.dsh\profiles\desktop\`）
-- `node` / `pnpm` 可用（desktop profile 内自带 pnpm registry 配置）
-- 一个 OpenAI 兼容的文生图接口（默认 `https://api.ephone.ai/v1`）及 API 密钥
+- **DSH Desktop 0.2.0-rc.2 或更新**。本版插件用的是当前的「配置表单」契约：一个插件的 `Config` schema 就是注册本身，GUI 表单由 schema 里带 `.volatile()` 的字段生成，配置卡注册进 Plugins 页的 `plugins.item` 槽。旧版的 `settings.plugin.item` 槽、`installSettingsSection` / `settingsNamespace` 导出在新客户端里**已不存在**，旧版插件在 0.2.0-rc.2 上会直接加载失败。
+- 一个 OpenAI 兼容的图像接口（`/images/generations`，图生图另需 `/images/edits`）及其密钥。
+- 安装动作由 DSH 自带的 pnpm 完成，**不需要**你手动改 profile、也不需要全局装 pnpm。
 
-## 安装步骤
+## 安装
 
-### 1. 放置插件
+三种等价入口，任选其一。三者做的都是同一件事：在 profile 目录里 `pnpm add`，再把包名追加到 profile 的 `dsh.profile.bundles`。
 
-把 `dsh-tool-imagegen` 整个目录拷贝到 DSH 插件目录：
+### 方式 A — GUI（推荐）
 
-```bash
-cp -r dsh-tool-imagegen C:/Users/CJX/.dsh/plugins/
+DSH → 侧栏 **插件** → **添加插件** → 填入以下任一种 spec：
+
+| spec 形式 | 例子 |
+|---|---|
+| 本地绝对路径 | `D:\dsh-work\imagegen-repo` |
+| npm 包名（± 版本） | `dsh-tool-imagegen@0.2.0` |
+| git 地址 | `github:Github-CJX/dsh-tool-imagegen` |
+| tarball | `D:\dist\dsh-tool-imagegen-0.2.0.tgz` |
+
+> 本地路径**必须是绝对路径**（相对路径会被拒绝）。
+
+### 方式 B — 命令行
+
+```powershell
+# $boot 是 Desktop 自带的 CLI 引导文件；DSH Desktop 里带 dsh 命令时直接用 `dsh`。
+& $exe --expose-internals $boot plugin --profile desktop add 'D:\dsh-work\imagegen-repo'
 ```
 
-最终路径：`C:\Users\CJX\.dsh\plugins\dsh-tool-imagegen\`（含 `lib/`、`src/`、`package.json`、`cordis.patch.yml` 等）。
+### 方式 C — Agent 工具
 
-### 2. 挂载到 desktop profile
+`plugin_manager` 的 `install_bundle`，`target` 传插件目录的绝对路径。
 
-编辑 `C:\Users\CJX\.dsh\profiles\desktop\package.json`：
+装完之后 profile 的 `package.json` 会长这样：
 
 ```jsonc
 {
-  "dependencies": {
-    // 添加（如已存在则跳过）：
-    "@local/dsh-tool-imagegen": "file:../../plugins/dsh-tool-imagegen"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": [
-        // 添加：
-        "@local/dsh-tool-imagegen"
-      ]
-    }
-  }
+  "dependencies": { "@local/dsh-tool-imagegen": "link:D:/dsh-work/imagegen-repo" },
+  "dsh": { "profile": { "bundles": [ "...", "@local/dsh-tool-imagegen" ] } }
 }
 ```
 
-> 如果 profile 里仍残留旧插件 `@dickpy/dsh-imagegen`，请同时删除它的依赖项与 bundles 条目（本插件完全替代它）。
+> **本地路径装成 `link:`，不是拷贝。** DSH 直接加载你给的那个目录（`lib/index.js` 与已构建的 `lib/client.js`），所以改宿主侧代码只需要重启，不需要重新安装。这也是为什么仓库里提交了构建产物 `lib/client.js`——客户端 bundle 必须在启动前就存在。
 
-### 3. 安装依赖
+## 配置
 
-```bash
-cd C:/Users/CJX/.dsh/profiles/desktop
-pnpm install
-```
-
-> **注意：`file:` 依赖安装为实体拷贝，不是符号链接。** pnpm 把 `dsh-tool-imagegen` 整个目录拷贝到 `node_modules/@local/dsh-tool-imagegen`，DSH 实际加载的是**这份拷贝**。因此修改插件源目录后，必须重新同步拷贝才能生效（见下文「升级 / 重装」），改源码不重启不会生效——这是预期行为，不是 bug。
-
-### 4. 配置
-
-两种方式任选：
-
-**方式 A — GUI（推荐）**：打开 DSH → 设置 → 插件 → 可配置 →「生图插件」卡片，填写：
+侧栏 **插件** → 本插件卡片（标题「对话内联生图」/ *Inline image generation*）：
 
 | 字段 | 说明 |
 |---|---|
+| 启用 | 插件总开关；关闭后对话里的生图请求被忽略，但配置卡仍在（否则没法再打开） |
+| 向模型告知能力 | 是否把插件写进系统提示，让模型更愿意自动调用 `generate_image` |
 | 接口地址 | OpenAI 兼容 base URL，如 `https://api.ephone.ai/v1` |
-| API 密钥 | 只存本机，不回显；留空表示不变 |
+| API 密钥 | 只存本机，响应里永不回显；留空表示保持当前密钥 |
 | 模型 | 上游模型名，默认 `gpt-image-2` |
-| 尺寸 / 张数 | 默认出图参数（工具调用时可被模型覆盖） |
+| 尺寸 / 张数 | 默认出图参数，可被模型调用时覆盖 |
+| 画质 / 输出格式 / 背景 / 风格 / 审核 / 水印 | 每个都是「勾选框 + 可输入下拉」：勾选才生效 |
 
-保存后立即生效，无需重启。
+点 **保存** 写入，即时生效，无需重启。
 
-**方式 B — 直接编辑 settings.yaml**：`C:\Users\CJX\.dsh\settings.yaml` 中维护 `dsh-imagegen:` 段：
+**配置存在哪里**：profile 的补丁文件 `C:\Users\CJX\.dsh\profiles\desktop\cordis.patch.yml`，对应 `id: dsh-imagegen` 那一行的 `config` 段。它不再写 `settings.yaml`。
+
+> **从旧版本迁移**：插件行的 id 就是旧插件用的设置命名空间 `dsh-imagegen`。DSH 启动时会把 `~/.dsh/settings.yaml` 里同名的段按行 id 导入，所以旧插件留下的 `dsh-imagegen:` 段（`apiUrl` / `apiKey` 等）会被自动折进这一行，无需手动迁移；导入后原文件被改名为 `settings.yaml.imported`。
+
+也可以直接在 `cordis.patch.yml` 里写（GUI 未打开时的冷配置）：
 
 ```yaml
-dsh-imagegen:
-  apiUrl: https://api.ephone.ai/v1
-  apiKey: <你的密钥>
-  model: gpt-image-2
-  size: 1024x1024
-  n: 1
-  enabled: true
-  announceToAgent: true
+- id: dsh-imagegen
+  name: '@local/dsh-tool-imagegen'
+  config:
+    apiUrl: https://api.ephone.ai/v1
+    model: gpt-image-2
+    size: 1024x1024
+    n: 1
 ```
 
-> 如果之前用过旧插件 `@dickpy/dsh-imagegen`，这段配置已存在且**自动继承**，无需迁移。
+## 重启并验证
 
-### 5. 重启并验证
+**完全退出** DSH（含托盘/后台进程）再启动，然后逐项检查：
 
-重启 DSH，按顺序检查：
+1. **启动无报错** —— 日志里没有 `Failed to load plugins` / `client bundle not found` 之类错误。
+2. **卡片出现** —— 侧栏「插件」页里出现本插件卡片；展开后有上面那张表单，接口地址/密钥状态正确。
+3. **生图内联** —— 说「帮我画一只戴帽子的橘猫，油画风格」→ 模型调用 `generate_image` → 图片内联显示在对话中，悬停有 全屏查看 / 修改 / 下载 / 本地打开。
+4. **纯文本模型安全** —— 生成后继续对话（「再画一张」）→ 不出现 `UNSUPPORTED_CONTENT`。
+5. **设置即时生效** —— 改模型/尺寸保存后，下一次生成即用新值（宿主侧监听 `loader/volatile-update` 重建工具 schema）。
+6. **存储清理** —— 同一个卡片里有「生图存储」区块，显示占用并可一键清理孤儿文件。
 
-1. **启动无报错** — 日志里不应再有 `Failed to load plugins ... __ModuleLoader__.load` 之类错误
-2. **设置页** — 设置 → 插件 → 可配置 出现「生图插件」卡片，apiUrl / apiKey 已自动填好（继承自旧配置）
-3. **生图内联** — 对话输入「帮我画一只戴帽子的橘猫，油画风格」→ 模型自动调用 `generate_image` → 图片内联显示在对话中，右上角有下载按钮
-4. **text-only 安全** — 生成后继续对话（"再画一张""说说这是什么"）→ 不出现 `UNSUPPORTED_CONTENT`
-5. **设置即时生效** — 改 model / size 保存后，下一次生成即用新值
+## 开发时的改动生效路径
 
-## 升级 / 重装
+| 改了什么 | 要做什么 |
+|---|---|
+| `lib/*.js`（宿主侧） | 重启 DSH |
+| `src/client/*`（浏览器侧） | `node build-client.mjs` → 重启 DSH |
+| `package.json` / `cordis.patch.yml` | 重启 DSH（必要时重新 `add`） |
 
-插件仓库自带同步脚本，一条命令完成「清掉拷贝 → 重装 → 校验」：
+验证一条命令跑完全部测试：
 
 ```bash
-cd C:/Users/CJX/.dsh/plugins/dsh-tool-imagegen
-node sync-profile.mjs                # 默认 profile；可用 --profile <path> 指定
-# 重启 DSH（必须完全退出所有进程）
+node test-settings.mjs && node test-engine.mjs && node test-maintenance.mjs \
+  && node test-routes-open.mjs && node test-session-events.mjs
+node build-client.mjs && node smoke-client.mjs
 ```
-
-手动操作等价的步骤：
-
-```bash
-rm -rf node_modules/@local/dsh-tool-imagegen   # 清掉旧拷贝
-cd C:/Users/CJX/.dsh/profiles/desktop && pnpm install
-# 重启 DSH
-```
-
-客户端部分修改后需要重建（`node build-client.mjs`）再同步；宿主侧（lib/）修改直接生效。
 
 ## 卸载
 
-1. `package.json` 删除依赖项与 bundles 条目
-2. `pnpm install`
-3. 删除插件目录 `C:\Users\CJX\.dsh\plugins\dsh-tool-imagegen`
-4. 可选：删除 `settings.yaml` 中的 `dsh-imagegen:` 段
+任一入口：
+
+- GUI：插件卡片 → 卸载；
+- 命令行：`dsh plugin --profile desktop remove @local/dsh-tool-imagegen`；
+- Agent 工具：`plugin_manager` 的 `remove_bundle`。
+
+之后 profile 的 `dependencies` 与 `dsh.profile.bundles` 都会被清理；重启 DSH 生效。
 
 ## 常见问题
 

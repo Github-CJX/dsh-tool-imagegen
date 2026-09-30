@@ -30,27 +30,29 @@
 - **上传参考图（用对话自带的附件按钮）** — 直接用输入框的**原生附件上传**（回形针）：图片作为平台原生 `image` 块进入会话，多模态模型可直接看图。插件**不再提供自己的上传按钮**（旧版为纯文本模型另做了一套「待发送暂存」通道，现已移除，避免输入框出现两个上传入口）。上传后让模型「基于这张图改…」即可，模型也可以直接用 `generate_image(image=<附件 id 或工作目录路径>)`。
 - **一键修改 / 连续修改** — 任何一张生成图都能点「修改」直接变成待发送参考图，输入需求发送后生成新图；对新图再点「修改」即可无限连续改。对两类模型同一机制
 - **模型直接图生图（无需手动上传）** — 每次生成的图片会自动在工作目录保存一份，信封把「参考图路径」告知模型；用户说「把这张图改成…」时模型直接用该路径调用 `generate_image(image=路径)`，无需点「修改」重新上传。路径仅用于工具参数，模型被明确禁止在回复中展示
-- **存储清理卡片** — 设置 → 插件 → 可配置 →「生图存储」：显示上传文件与附件对象占用，一键清理不被任何会话引用的孤儿文件（含已删除会话的历史图片）
-- **设置页可配置** — 设置 → 插件 → 可配置 中的「生图插件」卡片：接口地址、API 密钥、模型名、默认尺寸（官方尺寸下拉）、默认张数，以及 6 个可选参数（画质/格式/背景/风格/审核/水印），每项 = **勾选框 + 可输入下拉**：勾选才使用，未勾选不发送上游、模型也不可见（默认全不勾）。参数优先级：模型显式传参 > 设置页默认 > 留空用上游默认
-- **零配置迁移** — 复用旧插件 `@dickpy/dsh-imagegen` 的 `dsh-imagegen` 设置命名空间，已存在的 `apiUrl` / `apiKey` 自动继承
+- **存储清理** — 设置卡内嵌的「生图存储」区块：显示上传文件与附件对象占用，一键清理不被任何会话引用的孤儿文件（含已删除会话的历史图片）
+- **设置页可配置** — 侧栏 **插件** 页里的「对话内联生图」卡片：接口地址、API 密钥、模型名、默认尺寸（官方尺寸下拉）、默认张数，以及 6 个可选参数（画质/格式/背景/风格/审核/水印），每项 = **勾选框 + 可输入下拉**：勾选才使用，未勾选不发送上游、模型也不可见（默认全不勾）。参数优先级：模型显式传参 > 设置页默认 > 留空用上游默认
+- **走官方配置契约** — 设置不再由插件自建 HTTP 桥承载：`Config` schema 里带 `.volatile()` 的字段就是 GUI 表单，读写、版本栅栏、冲突检测、密钥脱敏全部由平台的 `configForms` 服务负责。保存后宿主靠 `loader/volatile-update` 重建系统提示与工具 schema，**无需重启**
+- **零配置迁移** — 插件行 id 就是旧插件用的设置命名空间 `dsh-imagegen`；旧 `settings.yaml` 里的 `dsh-imagegen:` 段由平台自带的迁移逻辑按行 id 自动折入，`apiUrl` / `apiKey` 无需手抄
 - **安全设计** —
-  - API 密钥只在宿主侧保存（settings.yaml），绝不进入浏览器，设置页不回显
-  - 设置桥、附件桥、本地打开桥、存储桥均为 **loopback 围栏**，仅本机浏览器可访问
+  - API 密钥是 `role('secret')` 字段，只在宿主侧保存，平台在每次响应里结构化剥掉，浏览器永远拿不到原值、设置页不回显
+  - 附件桥、本地打开桥、上传桥、存储桥均为 **loopback 围栏**，仅本机浏览器可访问；配置走平台设置服务，非本机页面自动降级为只读且不出现卡片
   - 附件桥按「会话事件里是否存在引用该附件的 `generated-image` 块」授权，与平台自身的附件授权模型一致；本地打开桥复用同一套授权
 
 ## 快速开始
 
+在 DSH Desktop 里，侧栏 **插件** → **添加插件** → 填入插件目录的**绝对路径**（如 `D:\dsh-work\imagegen-repo`），安装后**完全重启** DSH，然后：
+
+1. 侧栏 **插件** 页出现「对话内联生图」卡片 → 展开 → 填接口地址与 API 密钥 → 保存；
+2. 在对话里说「生成一个猫咪的图片」。
+
+命令行等价写法：
+
 ```bash
-# 1. 把插件目录放到 DSH 插件目录
-cp -r dsh-tool-imagegen C:/Users/CJX/.dsh/plugins/
-
-# 2. 在 desktop profile 挂载（见 docs/installation.md 的完整步骤）
-#    package.json 添加依赖 + bundles，然后：
-cd C:/Users/CJX/.dsh/profiles/desktop
-pnpm install
-
-# 3. 重启 DSH，在对话里说「生成一个猫咪的图片」
+& $exe --expose-internals $boot plugin --profile desktop add 'D:\dsh-work\imagegen-repo'
 ```
+
+本地路径装成 `link:`，DSH 直接加载该目录，所以改宿主侧代码只需重启、不必重装。
 
 完整安装步骤见 [docs/installation.md](docs/installation.md)，问题排查见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
@@ -61,7 +63,8 @@ pnpm install
   │
   ▼
 模型 ──调用 generate_image──▶ 插件宿主侧 execute()
-  │                              │  读取设置（apiUrl / apiKey / model）
+  │                              │  读取实时设置（apiUrl / apiKey / model）
+  │                              │  volatile 字段经 liveValue() 解包
   │                              ▼
   │                        OpenAI 兼容 /images/generations
   │                              │  返回 b64 图片
@@ -119,7 +122,7 @@ pnpm install
 | 启用 | 开 | 关闭后对话中的生图请求被忽略 |
 | 向模型告知能力 | 开 | 写入系统提示，模型更可能自动调用 |
 | 接口地址 | `https://api.ephone.ai/v1` | OpenAI 兼容 base URL |
-| API 密钥 | （继承旧配置） | 仅存本机设置文件，不回显 |
+| API 密钥 | （继承旧配置） | `role('secret')` 字段：只存宿主侧，平台结构化脱敏，永不出现在任何响应里；留空保存＝保持不变 |
 | 模型 | `gpt-image-2` | 上游模型名，可手写修改 |
 | 尺寸 | `1024x1024` | 官方 gpt-image-2 尺寸下拉（`auto` = 上游默认），可手写任意合法尺寸（最大边 ≤ 3840px） |
 | 张数 | `1` | 一次生成几张（1–4） |
@@ -132,13 +135,14 @@ pnpm install
 
 > **参数优先级**：模型调用时显式传入的参数 > 设置页填写的值 > 留空则由上游默认。6 个可选参数（画质/格式/背景/风格/审核/水印）统一为「**勾选框 + 可输入下拉**」形态：下拉框前有勾选框，**勾选 = 使用此参数**。未勾选时：设置值不可编辑、不给上游发送、工具 schema 不向模型开放（模型看不到也传不了）；勾选后：设置值生效、可手写自定义值（兼容非标准网关）、模型也能在 `generate_image` 里透传同名参数。当前网关不兼容 `output_format`（忽略声明格式）/ `style`（Unknown parameter）/ `watermark`（按布尔解析），只有换用支持它们的上游后才应勾选。
 
-设置保存在本机 `settings.yaml` 的 `dsh-imagegen:` 段，保存后立即生效，无需重启。
+配置写入 profile 的补丁文件 `C:\Users\CJX\.dsh\profiles\desktop\cordis.patch.yml` 中 `id: dsh-imagegen` 那一行的 `config` 段（不再写 `settings.yaml`），保存后立即生效，无需重启：宿主监听 `loader/volatile-update` 重建系统提示与工具 schema。
 
 ## 常见问题与解决方案
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| 改了插件源码，重启后功能没变 | `file:` 依赖是**实体拷贝**，DSH 从 `node_modules/@local/...` 的拷贝加载，不是源目录 | 跑 `node sync-profile.mjs`（清拷贝 → 重装 → 校验），然后**完全退出** DSH 再启动 |
+| 升级 DSH 后插件整个加载失败，或配置卡完全不出现 | 0.2.0-rc.2 换掉了插件配置契约（`installSettingsSection` / `settings.plugin.item` 已删除；现在靠 `Config` 的 `.volatile()` 字段 + Plugins 页的 `plugins.item` 槽 + 平台的 `configForms` 服务） | 用最新版插件（本版已适配）；细节与自改注意事项见 [troubleshooting.md 第 0 条](docs/troubleshooting.md) |
+| 改了插件源码，重启后功能没变 | 装成了实体拷贝，或依赖指向的不是你在编辑的目录 | 本地路径装成 `link:` 时 DSH 直接加载源目录，重启即可；确认 `profiles/desktop/package.json` 的依赖是 `link:<你的目录>` |
 | 图生图报 `Unknown parameter: 'input_image'` | 旧版引擎把参考图塞进 `/images/generations` 的 JSON body，OpenAI 兼容网关拒绝 | 升级插件到最新版（图生图已改走标准 `/images/edits` multipart） |
 | 点「本地打开」报 **Windows 找不到文件** | 旧版临时文件名直接用了 `sha256:...` 附件 id，冒号被 NTFS 当作数据流分隔符 | 升级插件；新版文件名已清洗（`sha256_...`） |
 | 图生图失败 / 报错提到 edits | 上游只实现了 `/images/generations`，不支持 `/images/edits` | 换支持 `/images/edits` 的网关；这是上游能力问题，插件无法绕过 |
@@ -147,27 +151,26 @@ pnpm install
 | 模型不自动调用 `generate_image` | 模型没意识到有这个工具 | 明说「用生图工具画…」，或检查设置页「向模型告知能力」开关 |
 | 选了图片但没有上传 | 原生附件上传会立刻进入待发送区（回形针 → 缩略图）；生成图的「修改」是**待发送**设计，点了只暂存，必须输入消息一起发送 | 直接发送即可；「修改」暂存后输入需求再发送 |
 | 想上传参考图但找不到生图插件的上传按钮 | 新版**有意移除**了插件自带的上传按钮（纯文本模型时代的「待发送暂存」通道），改用输入框的原生附件上传，避免两个上传入口 | 直接用输入框的附件（回形针）按钮；多模态模型可直接看图，纯文本模型请改说「把这张图改成…」并让模型用工作目录路径（生成图点「修改」也仍走插件自己的暂存通道） |
-| 生图卡片显示破图（一个加载失败的小图标 + 提示词文字），没有图片 | 旧版桥读取 `session.events`；DSH 2.0.10 的会话服务把事件日志改为私有（`snapshotEvents()` / `ownEvents()`），`session.events` 是 `undefined`，桥内直接抛 `TypeError: events is not iterable`，请求 500 | 升级插件到最新版（新增 `lib/session-events.js` 兼容两种会话 API，并加回归测试 `test-session-events.mjs`），跑 `node sync-profile.mjs` 后**完全重启** DSH |
+| 生图卡片显示破图（一个加载失败的小图标 + 提示词文字），没有图片 | 旧版桥读取 `session.events`；DSH 2.0.10 的会话服务把事件日志改为私有（`snapshotEvents()` / `ownEvents()`），`session.events` 是 `undefined`，桥内直接抛 `TypeError: events is not iterable`，请求 500 | 升级插件到最新版（`lib/session-events.js` 兼容两种会话 API，并加回归测试 `test-session-events.mjs`），**完全重启** DSH |
 | 生图卡片显示 `session/attachment-invalid: Image is not referenced by this session.` | 卡片取图函数名 `loadImage` 与平台 owner props 重名，被覆盖后走了平台授权（平台只认 `image` 块） | 升级插件到最新版（字段改名 `bridgeImageUrl`）；刷新页面即可 |
 | 修改已生成图时气泡里出现 `【dsh-imagegen】…` 长段说明文字 + 「附加内容块」JSON | 旧版气泡渲染器按名导入了 primitives 的 `MessageText`；DSH 2.0.10 已移除该导出 → `undefined` → React error #130 → 遮蔽项被 slot 层 abdicate，永久回退平台原生气泡 | 升级到最新版：所有 primitives 改为防御式解析 + 内联兜底（缺组件也不会崩溃），用户文本纯文本渲染；刷新页面即可 |
 | 生成图收进可折叠的通用工具行（要点开才见） | 工具视图对调用块形状判断失败而崩溃，keyed 视图被剔除回退到通用卡片 | 升级到新版：工具视图兼容 `content` 与嵌套 `result.content` 两种块形态，任何形状都不会崩溃回退 |
 | 生成图超过 5MB 无法点「修改」 | 平台附件上限 5MB | 换小尺寸重试（`1024x1024` 通常 <5MB）；这是平台硬限制 |
-| 找不到存储清理卡片 | 卡片在设置页第二张 | 设置 → 插件 → 可配置 →「生图存储」卡片，展开可见占用与「清理未引用文件」按钮 |
+| 找不到存储清理入口 | 它不再是独立卡片 | 侧栏 **插件** → 本插件卡片 → 展开 → 底部「生图存储」区块，可见占用与「清理未引用文件」按钮 |
 | 清理后历史会话里的图还在 | 被任何会话（含已关闭但持久化的会话）引用的文件**永不删除** | 设计如此：清理只删孤儿文件，正在被引用的图安全保留 |
 | 清理后刚生成的图没了（重启后变破图） | 旧版的两个 bug：c7 的会话日志是**多帧 zstd 容器**，整包解压只读到第一帧（引用全漏）；且附件对象文件名是纯 sha256 而事件里带 `sha256:` 前缀，判定永远匹配不上 | 升级插件到最新版（已修复：逐帧解码 + 双拼写匹配，并加回归测试）。被误删的历史图无法找回，新版本清理只删真孤儿 |
-| 升级 DSH 到 rc.7 后设置里的两张卡（生图插件 / 生图存储）消失了 | rc.7 把 `settings.plugin.item` 槽改为**按设置命名空间 keyed**（一个 key 一张卡），旧版用 `id` 注册被静默拒绝 | 升级插件到最新版（注册改为 `key: dsh-imagegen`，存储清理并入设置卡内嵌区块） |
+| 升级 DSH 到 rc.7 后设置里的两张卡（生图插件 / 生图存储）消失了 | rc.7 把 `settings.plugin.item` 槽改为按设置命名空间 keyed（一个 key 一张卡），旧版用 `id` 注册被静默拒绝 | 升级插件到最新版（存储清理并入设置卡内嵌区块）。rc.7 的 `key` 形态在 **0.2.0-rc.2 又整体作废**，见上面第一行 |
 | 生成图时对话里多出一张毫不相干的图片 | c7 的 markdown 渲染器开始渲染 `![...](http(s)://...)`；模型从信封得知「图片已生成」后自己写 markdown 图片引用（URL 为模型幻觉） | 升级插件到最新版（信封与系统提示已明确告知模型「图片已直接显示，请勿在回复中引用图片」） |
 | 对话出现 `UNSUPPORTED_CONTENT` 报错 | 本插件永不产生 `image` 块；此报错来自平台原生图片上传或其他图像插件 | 检查是否在文本模型会话用了平台自带的上传/其他图像插件；本插件的生成/上传/修改均不会触发 |
-| 设置卡片提示「当前环境不提供该设置」 | 浏览器不是通过本机回环地址访问 | 设置桥仅限 loopback；远程访问 DSH 时设置只读，密钥永远不出本机 |
 
 ## 仓库结构
 
 ```
 dsh-tool-imagegen/
 ├── lib/                        # 宿主侧（Node ESM）
-│   ├── index.js                # 插件入口：设置段、工具注册、各桥挂载
+│   ├── index.js                # 插件入口：Config schema、工具注册、各桥挂载
 │   ├── engine.js               # 上游调用：/images/generations + /images/edits（含自动重试）
-│   ├── routes.js               # 设置 / 附件 / 上传 / 能力 / 存储 / 本地打开 桥（loopback 围栏）
+│   ├── routes.js               # 附件 / 上传 / 能力 / 存储 / 本地打开 桥（loopback 围栏）
 │   ├── maintenance.js          # 孤儿文件收集与清理（含 zstd 持久化会话扫描）
 │   ├── session-events.js       # 会话事件读取（兼容旧 events 数组与新 snapshotEvents API）
 │   ├── uploads.js              # 上传工作目录管理
@@ -177,40 +180,48 @@ dsh-tool-imagegen/
 │   ├── index.ts                # 入口：设置卡片 + toolview + sendSession 包装（无自定义上传按钮）
 │   ├── GenerateImageView.tsx   # 内联图片卡片（全屏查看 / 修改 / 下载 / 本地打开）
 │   ├── UploadedImageBubble.tsx # 「修改」暂存图片的用户气泡渲染
-│   ├── MaintenanceCard.tsx     # 存储清理卡片
-│   ├── SettingsCard.tsx        # 设置页卡片
+│   ├── MaintenanceCard.tsx     # 设置卡内嵌的存储清理区块
+│   ├── SettingsCard.tsx        # 设置卡片（plugins.item 槽）
+│   ├── settings-scope.ts       # 把平台 configForms 适配成本卡片用的 scope
+│   ├── settings-form.ts        # 暂存式表单模型（CardForm / 字段规格）
 │   ├── pending-upload.ts       # 每会话「修改」暂存草稿 store
 │   ├── protocol.ts             # 共享常量 + 块类型定义
 │   └── locales.ts              # zh / en 文案
+├── locale/                     # 插件管理页展示元数据（en/zh 标题与简介）
 ├── build-client.mjs            # 客户端构建脚本
-├── sync-profile.mjs            # 同步插件到 profile（清拷贝 + 重装 + 校验）
-├── smoke-client.mjs            # 客户端冒烟测试
+├── check-profile.mjs           # 校验 profile 指向本目录 + 包满足平台的启动契约
+├── smoke-client.mjs            # 客户端冒烟测试（含 plugins.item 的 view 契约）
+├── test-settings.mjs           # 设置契约测试（volatile 字段集、密钥、实时读取、schema 重建）
 ├── test-engine.mjs             # 引擎测试（请求形态 + 重试）
 ├── test-maintenance.mjs        # 存储清理测试
 ├── test-session-events.mjs     # 会话事件兼容 + 附件桥授权测试
 ├── test-routes-open.mjs        # 本地打开桥临时文件命名测试
-└── cordis.patch.yml            # profile bundle 注册补丁
+└── cordis.patch.yml            # profile bundle 注册补丁（行 id = dsh-imagegen = 设置命名空间）
 ```
 
 ## 开发
 
 ```bash
-# 宿主侧改动：直接跑测试 + 重启 DSH（CI 同样会跑这三套，Node 22）
-node test-engine.mjs && node test-maintenance.mjs && node test-routes-open.mjs
+# 宿主侧改动（CI 同样会跑这几套，Node 22）
+node test-settings.mjs && node test-engine.mjs && node test-maintenance.mjs \
+  && node test-routes-open.mjs && node test-session-events.mjs
 
-# 客户端改动：重建 + 冒烟
+# 客户端改动：重建 + 冒烟（CI 会 diff lib/client.js，忘记重建会红）
 node build-client.mjs && node smoke-client.mjs
 
-# 改动生效：同步到 profile 拷贝（file: 依赖是实体拷贝，必须同步）
-node sync-profile.mjs
-# 然后完全退出并重启 DSH
+# 确认 profile 真的指向这份工作目录、且包满足平台的两条启动契约
+node check-profile.mjs
+
+# 生效：本地路径装成 link:，DSH 直接加载源目录 —— 完全退出并重启即可，不必重装。
+# （若是从 tarball / npm 装的拷贝，则要重新 add 覆盖。）
 ```
 
 ## 兼容性
 
-- 插件工作目录：`C:\Users\CJX\.dsh\plugins\dsh-tool-imagegen`
-- 平台包路径：DSH Desktop `resources/app.asar.unpacked/node_modules/@deepseek-ai/`
-- 不依赖旧插件 `@dickpy/dsh-imagegen`（已彻底移除；配置命名空间 `dsh-imagegen` 保留以自动继承旧配置）
+- 目标客户端：**DSH Desktop 0.2.0-rc.2 及更新**（`.volatile()` 配置字段 + `configForms` + `plugins.item` 契约）。
+- 插件以 `link:` 装在 `C:\Users\CJX\.dsh\profiles\desktop`，行 id `dsh-imagegen`。
+- 唯一运行时依赖：`@deepseek-ai/schemastery`（`Config` schema 用；其余 `@deepseek-ai/dsh-*` 服务由宿主提供，客户端用到的都是平台 seed 模块或 cordis 服务）。
+- 不依赖旧插件 `@dickpy/dsh-imagegen`（已彻底移除；行 id / 设置命名空间 `dsh-imagegen` 保留以自动继承旧配置）。
 
 ## License
 
