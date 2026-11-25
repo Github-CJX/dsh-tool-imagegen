@@ -16,13 +16,8 @@
 
 ![plugin type](https://img.shields.io/badge/plugin-host%20%2B%20client-blue) ![model](https://img.shields.io/badge/text--only%20%2F%20image--capable%20%2F%20both-green) ![license](https://img.shields.io/badge/license-MIT-blue)
 
-<img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/e5b19ba2-04b7-4b07-90e0-418475920856" />
+<img width="2064" height="1359" alt="image" src="https://github.com/user-attachments/assets/e614f210-1e1c-4eb4-acdc-6192badcf132" />
 
-<img width="1920" height="1017" alt="image" src="https://github.com/user-attachments/assets/0db997cc-378a-43c7-8a75-5956fdb1971f" />
-
-<img width="1920" height="1039" alt="image" src="https://github.com/user-attachments/assets/ddd551d4-0b1f-4dfb-ac68-a4cda361c129" />
-
-<img width="1920" height="1041" alt="image" src="https://github.com/user-attachments/assets/f8f1abc3-5d47-4ca9-977d-7f39af08d9b6" />
 
 ## 特性
 
