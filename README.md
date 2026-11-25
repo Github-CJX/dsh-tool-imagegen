@@ -185,6 +185,16 @@
 | 升级 DSH 到 rc.7 后设置里的两张卡（生图插件 / 生图存储）消失了 | rc.7 把 `settings.plugin.item` 槽改为按设置命名空间 keyed（一个 key 一张卡），旧版用 `id` 注册被静默拒绝 | 升级插件到最新版（存储清理并入设置卡内嵌区块）。rc.7 的 `key` 形态在 **0.2.0-rc.2 又整体作废**，见上面第一行 |
 | 生成图时对话里多出一张毫不相干的图片 | c7 的 markdown 渲染器开始渲染 `![...](http(s)://...)`；模型从信封得知「图片已生成」后自己写 markdown 图片引用（URL 为模型幻觉） | 升级插件到最新版（信封与系统提示已明确告知模型「图片已直接显示，请勿在回复中引用图片」） |
 | 对话出现 `UNSUPPORTED_CONTENT` 报错 | 本插件永不产生 `image` 块；此报错来自平台原生图片上传或其他图像插件 | 检查是否在文本模型会话用了平台自带的上传/其他图像插件；本插件的生成/上传/修改均不会触发 |
+| 装完插件或换过 DSH 版本后，插件卡片还在，但 `generate_image` 工具不见了，fiber 是 `failed` | 旧版直接调 `ctx.webServer.register()`。返回的 disposer 被丢掉，而路由表本身不随 fiber 销毁：每次插件重载（任何 `plugin add` / `remove` 都会重载整棵树）都漏一条旧路由，下一次 apply 用同一路径注册就抛 `webserver: duplicate exact route`，整个 fiber 被判失败 | 升级到 0.2.1（四处注册都包进 `ctx.effect`，随 fiber 释放）；**重启 DSH** |
+
+## 更新记录
+
+### 0.2.1 · 2026-11-25
+
+- 修复：路由泄漏导致插件重载后整个 fiber `failed`。`images`、上传 + 能力探测、存储维护、本地打开四处
+  `ctx.webServer.register()` 现在都跑在 `ctx.effect` 里，随 fiber 一起释放。旧版丢掉了 register 返回的
+  disposer，而路由表不随 fiber 销毁，所以第二次 apply 会遇到同路径的残留路由并抛
+  `webserver: duplicate exact route`——表现就是插件装上了、卡片在、工具却调不到。
 
 ## 仓库结构
 
@@ -255,6 +265,7 @@ node check-profile.mjs
 ## 兼容性
 
 - 目标客户端：**官方 DSH Desktop 0.2.0-rc.2 及更新**（本插件只支持官方发行版，见页首「⚠️ 只支持官方 DSH」）。
+- 已知可用的宿主：0.2.0-rc.2、0.2.1-rc.x、0.2.2-rc.5（本仓库提交这套修复时正在 0.2.2-rc.5 上跑）。
 - 插件以 `link:` 装在 `C:\Users\CJX\.dsh\profiles\desktop`，行 id `dsh-imagegen`。
 - 唯一运行时依赖：`@deepseek-ai/schemastery`（`Config` schema 用；其余 `@deepseek-ai/dsh-*` 服务由宿主提供，客户端用到的都是平台 seed 模块或 cordis 服务）。
 - 不依赖旧插件 `@dickpy/dsh-imagegen`（已彻底移除；行 id / 设置命名空间 `dsh-imagegen` 保留以自动继承旧配置）。

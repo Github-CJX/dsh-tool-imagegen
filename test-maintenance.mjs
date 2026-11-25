@@ -168,11 +168,23 @@ await writeFile(join(attachmentsDir, 'objects', '33', '3333'), Buffer.alloc(60, 
   const log = encodeSessionLog([frame1, frame2, frame3])
   await writeFile(join(sessionDir, 'session.jsonl.zstd'), log)
 
-  // Sanity: the container really is multi-frame, and a whole-buffer decompress
-  // would only see the first frame (the exact regression this test guards).
+  // Sanity: the container really is multi-frame. A whole-buffer decompress is
+  // not frame-aware — and a log that a live session is still appending to is
+  // torn mid-frame, which is the shape this test guards. (Node 24's zstd
+  // decoder does walk concatenated frames, so the naive path only breaks on a
+  // torn tail; that is exactly the case the scanner exists for.)
   const { frames: ranges } = scanZstdFrames(log)
   check('encodeSessionLog produces a multi-frame container', ranges.length === 3)
-  check('naive whole-buffer decompress misses later frames', zstdDecompressSync(log).toString('utf8').split('\n').filter(Boolean).length === 1)
+  const tornLog = log.subarray(0, log.length - 8)
+  let naiveSurvives = false
+  try {
+    naiveSurvives = zstdDecompressSync(tornLog).toString('utf8').split('\n').filter(Boolean).length === 3
+  } catch {
+    naiveSurvives = false
+  }
+  check('naive whole-buffer decompress cannot survive a torn tail', !naiveSurvives)
+  const salvaged = decodeSessionLog(tornLog)
+  check('decodeSessionLog salvages whole frames from a torn log', salvaged.torn === true && salvaged.text.split('\n').filter(Boolean).length === 2)
   const { text, torn } = decodeSessionLog(log)
   check('decodeSessionLog yields every frame', !torn && text.split('\n').filter(Boolean).length === 3)
 
